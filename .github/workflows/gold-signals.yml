@@ -13,6 +13,16 @@ on:
         required: false
         default: false
         type: boolean
+      backtest_days:
+        description: 'Historical window in days (90, 180, 365, or 730)'
+        required: false
+        default: '365'
+        type: choice
+        options:
+          - '90'
+          - '180'
+          - '365'
+          - '730'
   schedule:
     - cron: "*/15 * * * *"
 
@@ -26,7 +36,7 @@ concurrency:
 jobs:
   check-market:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -74,6 +84,7 @@ jobs:
         if: ${{ inputs.run_backtest && !inputs.test_telegram }}
         env:
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          BACKTEST_DAYS: ${{ inputs.backtest_days || '365' }}
         run: python backtest.py
 
       - name: Upload backtest results

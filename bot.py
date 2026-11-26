@@ -158,8 +158,8 @@ def main():
     today_utc = now.strftime("%Y-%m-%d")
 
     # The workflow runs every 15 minutes. Send one daily diagnostics report
-    # during the 20:00 UTC run window (21:00 in Algeria, UTC+1).
-    if now.hour == 20 and now.minute < 15 and state.get("daily_report_date") != today_utc:
+    # after 20:00 UTC (21:00 in Algeria, UTC+1); delayed runs still send it.
+    if now.hour >= 20 and state.get("daily_report_date") != today_utc:
         m15_ema50 = ema(closes, 50)
         m15_status = "فوق EMA50" if last["close"] > m15_ema50 else "تحت أو عند EMA50"
         h4_status = classify_trend(h4_trend)

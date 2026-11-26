@@ -6,7 +6,8 @@ import json
 import os
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE_URL = "https://api.twelvedata.com/time_series"
@@ -14,21 +15,90 @@ API_KEY = os.environ["TWELVEDATA_API_KEY"]
 OUTPUT = Path("backtest_results")
 
 
-def fetch_m15(outputsize=5000):
-    params = urllib.parse.urlencode({"symbol": "XAU/USD", "interval": "15min", "outputsize": outputsize,
-                                     "timezone": "UTC", "apikey": API_KEY, "format": "JSON"})
-    req = urllib.request.Request(f"{BASE_URL}?{params}", headers={"User-Agent": "Gold-Signal-Backtest/1.0"})
-    with urllib.request.urlopen(req, timeout=40) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-    if "values" not in payload:
-        raise RuntimeError(f"Twelve Data error: {payload.get('message') or payload}")
-    bars = [{"time": x["datetime"], **{k: float(x[k]) for k in ("open", "high", "low", "close")}} for x in payload["values"]]
-    bars.sort(key=lambda x: x["time"])
-    if bars:
-        bars.pop()  # Exclude the possibly unfinished newest candle.
+def fetch_m15(days=None, outputsize=5000):
+    """Download a rolling historical window in <=5,000-bar pages."""
+    days = int(days or os.getenv("BACKTEST_DAYS", "365"))
+    if not 30 <= days <= 730:
+        raise ValueError("BACKTEST_DAYS must be between 30 and 730.")
+    now = datetime.now(timezone.utc)
+    start_time = now - timedelta(days=days)
+    end_time = now
+    collected = {}
+    request_count = 0
+    max_pages = 20
+
+    while end_time > start_time and request_count < max_pages:
+        params = urllib.parse.urlencode({
+            "symbol": "XAU/USD",
+            "interval": "15min",
+            "outputsize": outputsize,
+            "timezone": "UTC",
+            "order": "desc",
+            "end_date": end_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "apikey": API_KEY,
+            "format": "JSON",
+        })
+        req = urllib.request.Request(
+            f"{BASE_URL}?{params}",
+            headers={"User-Agent": "Gold-Signal-Backtest/2.0"},
+        )
+        with urllib.request.urlopen(req, timeout=40) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        request_count += 1
+
+        if "values" not in payload:
+            raise RuntimeError(
+                f"Twelve Data error on page {request_count}: "
+                f"{payload.get('message') or payload}"
+            )
+        values = payload["values"]
+        if not values:
+            break
+
+        for item in values:
+            stamp = datetime.strptime(
+                item["datetime"], "%Y-%m-%d %H:%M:%S"
+            ).replace(tzinfo=timezone.utc)
+            if stamp < start_time or stamp + timedelta(minutes=15) > now:
+                continue
+            collected[item["datetime"]] = {
+                "time": item["datetime"],
+                **{key: float(item[key]) for key in ("open", "high", "low", "close")},
+            }
+
+        oldest = min(
+            datetime.strptime(item["datetime"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            for item in values
+        )
+        if oldest <= start_time or len(values) < outputsize:
+            break
+        next_end = oldest - timedelta(seconds=1)
+        if next_end >= end_time:
+            raise RuntimeError("Historical pagination made no progress.")
+        end_time = next_end
+        if request_count < max_pages:
+            time.sleep(8.5)
+
+    bars = [collected[key] for key in sorted(collected)]
+    if request_count >= max_pages and bars:
+        first_time = datetime.strptime(
+            bars[0]["time"], "%Y-%m-%d %H:%M:%S"
+        ).replace(tzinfo=timezone.utc)
+        if first_time > start_time:
+            raise RuntimeError(
+                f"Reached the {max_pages}-page safety limit after collecting "
+                f"{len(bars)} candles; requested {days} days but coverage is incomplete."
+            )
     if len(bars) < 1000:
-        raise RuntimeError(f"Only {len(bars)} closed M15 candles returned; need at least 1000.")
-    return bars
+        raise RuntimeError(
+            f"Only {len(bars)} closed M15 candles returned across "
+            f"{request_count} requests; need at least 1000."
+        )
+    print(
+        f"Downloaded {len(bars)} closed M15 candles across {request_count} "
+        f"requests; requested window: {days} days."
+    )
+    return bars, request_count
 
 
 def ema_series(values, period):
@@ -282,10 +352,11 @@ def metrics(trades):
 
 
 def main():
-    bars = fetch_m15()
+    requested_days = int(os.getenv("BACKTEST_DAYS", "365"))
+    bars, data_requests = fetch_m15(requested_days)
     signals = build_signals(bars)
     all_trades = []
-    summary = {"instrument": "XAU/USD Spot (Twelve Data)", "timeframe": "M15", "bars": len(bars),
+    summary = {"instrument": "XAU/USD Spot (Twelve Data)", "timeframe": "M15", "bars": len(bars), "requested_days": requested_days, "data_requests": data_requests,
                "from_utc": bars[0]["time"], "to_utc": bars[-1]["time"],
                "execution_model": "Signal on closed candle; entry at next M15 open; stop-first if SL and TP touched in same candle; 2R target; maximum 48-bar hold.",
                "fibonacci_method": "Confirmed swing retracement; classic levels 0.382/0.500/0.618/0.786 and 0.705 tested separately; proximity tolerance 0.15 x recent 14-bar average true range; signal-candle close only.",

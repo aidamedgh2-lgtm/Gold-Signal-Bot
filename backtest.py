@@ -191,6 +191,46 @@ def build_signals(m15):
     return signals
 
 
+def fibonacci_filter_flags(bars, index, direction, lookback=3, scan=80):
+    """Causal Fibonacci proximity test using only candles available at index."""
+    start = max(0, index - scan - 2 * lookback)
+    window = bars[start:index + 1]
+    highs, lows = swing_points(window, lookback)
+    if direction == "BUY":
+        pairs = [(lo, hi) for lo in lows for hi in highs if lo[0] < hi[0]]
+        if not pairs: return {"classic": False, "705": False}
+        lo, hi = max(pairs, key=lambda pair: pair[1][0])
+        swing_low, swing_high = lo[1], hi[1]
+        levels = {r: swing_high - (swing_high - swing_low) * r for r in (0.382, 0.500, 0.618, 0.705, 0.786)}
+    elif direction == "SELL":
+        pairs = [(hi, lo) for hi in highs for lo in lows if hi[0] < lo[0]]
+        if not pairs: return {"classic": False, "705": False}
+        hi, lo = max(pairs, key=lambda pair: pair[1][0])
+        swing_high, swing_low = hi[1], lo[1]
+        levels = {r: swing_low + (swing_high - swing_low) * r for r in (0.382, 0.500, 0.618, 0.705, 0.786)}
+    else:
+        return {"classic": False, "705": False}
+    if swing_high <= swing_low: return {"classic": False, "705": False}
+    trs = []
+    for j in range(max(1, len(window) - 14), len(window)):
+        bar, previous = window[j], window[j - 1]["close"]
+        trs.append(max(bar["high"] - bar["low"], abs(bar["high"] - previous), abs(bar["low"] - previous)))
+    if not trs: return {"classic": False, "705": False}
+    tolerance = 0.15 * (sum(trs) / len(trs))
+    price = window[-1]["close"]
+    classic = any(abs(price - levels[x]) <= tolerance for x in (0.382, 0.500, 0.618, 0.786))
+    level_705 = abs(price - levels[0.705]) <= tolerance
+    return {"classic": classic, "705": level_705}
+
+
+def filter_signals_by_fibonacci(signals, bars, level_type):
+    filtered = {}
+    for index, signal in signals.items():
+        flags = fibonacci_filter_flags(bars, index, signal["direction"])
+        if flags[level_type]:
+            filtered[index] = signal
+    return filtered
+
 def simulate(bars, signals, strategy):
     trades, active = [], None
     for i in range(1, len(bars)):
@@ -248,15 +288,22 @@ def main():
     summary = {"instrument": "XAU/USD Spot (Twelve Data)", "timeframe": "M15", "bars": len(bars),
                "from_utc": bars[0]["time"], "to_utc": bars[-1]["time"],
                "execution_model": "Signal on closed candle; entry at next M15 open; stop-first if SL and TP touched in same candle; 2R target; maximum 48-bar hold.",
+               "fibonacci_method": "Confirmed swing retracement; classic levels 0.382/0.500/0.618/0.786 and 0.705 tested separately; proximity tolerance 0.15 x recent 14-bar average true range; signal-candle close only.",
                "limitations": ["ICT is a rule-based OHLC approximation, not full discretionary ICT.",
                                "No spread, slippage, commission, swap, or HFM feed differences are modeled.",
                                "No order-book/Bookmap or fundamental/news filter.",
                                "The available provider history may be too short for statistical conclusions."],
                "strategies": {}}
     for name in ("Technical", "ICT"):
-        trades = simulate(bars, signals[name], name)
-        all_trades.extend(trades)
-        summary["strategies"][name] = metrics(trades)
+        variants = {
+            name: signals[name],
+            name + " + Fibonacci classic": filter_signals_by_fibonacci(signals[name], bars, "classic"),
+            name + " + Fibonacci 0.705": filter_signals_by_fibonacci(signals[name], bars, "705"),
+        }
+        for variant_name, variant_signals in variants.items():
+            trades = simulate(bars, variant_signals, variant_name)
+            all_trades.extend(trades)
+            summary["strategies"][variant_name] = metrics(trades)
     OUTPUT.mkdir(exist_ok=True)
     (OUTPUT / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     with (OUTPUT / "trades.csv").open("w", newline="", encoding="utf-8") as f:

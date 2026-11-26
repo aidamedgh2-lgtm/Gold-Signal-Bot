@@ -8,6 +8,11 @@ on:
         required: false
         default: false
         type: boolean
+      run_backtest:
+        description: 'Run historical ICT vs Technical comparison (no Telegram signal)'
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: "*/15 * * * *"
 
@@ -65,8 +70,22 @@ jobs:
         if: ${{ !inputs.test_telegram }}
         run: python -m py_compile bot.py
 
+      - name: Run historical strategy backtest
+        if: ${{ inputs.run_backtest && !inputs.test_telegram }}
+        env:
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+        run: python backtest.py
+
+      - name: Upload backtest results
+        if: ${{ inputs.run_backtest && !inputs.test_telegram && always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-strategy-backtest
+          path: backtest_results/
+          if-no-files-found: warn
+
       - name: Run signal analysis
-        if: ${{ !inputs.test_telegram }}
+        if: ${{ !inputs.test_telegram && !inputs.run_backtest }}
         env:
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

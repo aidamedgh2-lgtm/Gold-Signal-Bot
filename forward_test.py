@@ -211,6 +211,13 @@ def main():
     times = [b["time"] for b in bars]
     last = state["last_processed_candle"]
     if last not in times: raise RuntimeError("Last processed candle outside rolling window; stopping rather than skipping data.")
+    # Rebase persisted open-position indices to this run's rolling candle window.
+    for book in state["books"].values():
+        active = book.get("active")
+        if active:
+            if active["entry_time"] not in times:
+                raise RuntimeError("An open paper position is outside the rolling candle window; refusing inaccurate duration tracking.")
+            active["entry_index"] = times.index(active["entry_time"])
     start_i = times.index(last)+1
     if start_i >= len(bars):
         print("No new closed M15 candle.")

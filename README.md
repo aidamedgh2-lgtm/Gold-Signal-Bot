@@ -44,12 +44,17 @@ Alerts are for paper testing only. Entry, stop, and targets are calculated from 
 Open Actions → **Gold signal checks** → **Run workflow** and set
 `run_backtest=true` (leave `test_telegram=false`). This runs `backtest.py`
 without sending a Telegram trade alert or changing the live bot's signal state.
-The run requests up to 5,000 M15 XAU/USD candles from Twelve Data and creates
+The run downloads a selectable historical window (90, 180, 365, or 730 days)
+from Twelve Data in pages of up to 5,000 M15 candles. Requests are spaced to
+reduce the risk of exceeding free-tier rate limits. If the provider cannot
+supply the full requested window, the backtest stops with an explicit error
+rather than silently presenting a shorter sample as complete. It creates
 `summary.json` and `trades.csv` as the **gold-strategy-backtest** workflow
 artifact. Download the artifact from that workflow run.
 
 The comparison evaluates the current Technical rules and a deliberately
-simplified, OHLC-based ICT proxy separately. Entries are modeled at the next
+simplified, OHLC-based ICT proxy separately, and records the actual candle
+count, requested days, and API request count in `summary.json`. Entries are modeled at the next
 M15 candle open; a 2R target, 48-bar maximum holding period, and conservative
 stop-first handling are used. Results omit spread, slippage, commissions,
 swaps, and HFM feed differences. The available history may be too short for

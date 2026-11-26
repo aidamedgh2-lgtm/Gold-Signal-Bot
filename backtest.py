@@ -194,6 +194,7 @@ def simulate(bars, signals, strategy):
     trades, active = [], None
     for i in range(1, len(bars)):
         bar = bars[i]
+        had_open_trade_at_bar_start = active is not None
         if active:
             direction, stop, risk = active["direction"], active["stop"], active["risk"]
             target = active["entry"] + 2 * risk if direction == "BUY" else active["entry"] - 2 * risk
@@ -205,7 +206,8 @@ def simulate(bars, signals, strategy):
                                "direction": direction, "entry": active["entry"], "stop": stop, "risk": risk,
                                "exit_time": bar["time"], "r_multiple": result_r})
                 active = None
-        if active is None and i - 1 in signals:
+        # Do not open a new trade on a candle that was used to exit an older trade.
+        if not had_open_trade_at_bar_start and active is None and i - 1 in signals:
             signal = signals[i - 1]
             entry = bar["open"]  # Enter only at the next candle open.
             risk = abs(entry - signal["stop"])

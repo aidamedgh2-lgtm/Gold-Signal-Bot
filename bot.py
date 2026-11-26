@@ -140,6 +140,111 @@ def market_structure(candles, lookback=3, scan=80):
     return {"label": label, "last_swing_high": last_high, "last_swing_low": last_low}
 
 
+def ict_candidate(candles, current_atr):
+    """Rule-based ICT-inspired proxy: liquidity sweep, MSS, then FVG.
+
+    This uses OHLC candles only. It is not a complete ICT model and has no
+    order-book, broker-tick, or institutional execution data.
+    """
+    if len(candles) < 100:
+        return None
+
+    prior = candles[:-12]
+    recent = candles[-12:]
+    prior_structure = market_structure(prior, lookback=2, scan=80)
+    swing_high = prior_structure["last_swing_high"]
+    swing_low = prior_structure["last_swing_low"]
+    if swing_high is None or swing_low is None:
+        return None
+
+    bullish_sweep = None
+    bearish_sweep = None
+    for i, candle in enumerate(recent):
+        if candle["low"] < swing_low and candle["close"] > swing_low:
+            bullish_sweep = (i, candle["low"])
+        if candle["high"] > swing_high and candle["close"] < swing_high:
+            bearish_sweep = (i, candle["high"])
+
+    candidates = []
+    for direction, sweep, mss_level in (
+        ("BUY", bullish_sweep, max(x["high"] for x in prior[-8:])),
+        ("SELL", bearish_sweep, min(x["low"] for x in prior[-8:])),
+    ):
+        if sweep is None:
+            continue
+        sweep_index, sweep_extreme = sweep
+        post_sweep = recent[sweep_index + 1:]
+        if not post_sweep:
+            continue
+
+        if direction == "BUY":
+            mss = any(x["close"] > mss_level for x in post_sweep)
+        else:
+            mss = any(x["close"] < mss_level for x in post_sweep)
+        if not mss:
+            continue
+
+        # Find a recent three-candle Fair Value Gap formed after the sweep.
+        fvg = None
+        for j in range(max(sweep_index + 1, len(recent) - 6), len(recent)):
+            absolute_index = len(candles) - 12 + j
+            if absolute_index < 2:
+                continue
+            first = candles[absolute_index - 2]
+            third = candles[absolute_index]
+            if direction == "BUY" and third["low"] > first["high"]:
+                fvg = (first["high"], third["low"])
+            elif direction == "SELL" and third["high"] < first["low"]:
+                fvg = (third["high"], first["low"])
+
+        if fvg is None:
+            continue
+
+        zone_low, zone_high = min(fvg), max(fvg)
+        entry = (zone_low + zone_high) / 2
+        # Reject stale or distant FVGs; a setup must remain near the current price.
+        if abs(candles[-1]["close"] - entry) > 1.5 * current_atr:
+            continue
+
+        stop = sweep_extreme - 0.20 * current_atr if direction == "BUY" else sweep_extreme + 0.20 * current_atr
+        risk = abs(entry - stop)
+        if risk <= 0 or risk > 2.5 * current_atr:
+            continue
+        candidates.append({
+            "strategy": "ICT",
+            "direction": direction,
+            "entry": entry,
+            "stop": stop,
+            "risk": risk,
+            "zone_low": zone_low,
+            "zone_high": zone_high,
+            "score": 80,
+            "reasons": [
+                "تم رصد Liquidity Sweep لمستوى Swing سابق",
+                "حدث Market Structure Shift (MSS) بعد سحب السيولة",
+                "تكوّنت منطقة Fair Value Gap (FVG) بعد التحول",
+            ],
+        })
+
+    return max(candidates, key=lambda x: x["score"]) if candidates else None
+
+
+def build_technical_candidate(direction, entry, atr_value, reasons):
+    if not direction:
+        return None
+    risk = 1.5 * atr_value
+    stop = entry - risk if direction == "BUY" else entry + risk
+    return {
+        "strategy": "Technical",
+        "direction": direction,
+        "entry": entry,
+        "stop": stop,
+        "risk": risk,
+        "score": 76,
+        "reasons": reasons,
+    }
+
+
 def classify_trend(data):
     if data["ema50"] > data["ema200"] and data["close"] > data["ema50"]:
         return "صاعد"
@@ -219,8 +324,8 @@ def main():
         save_state(state)
         print(f"Daily diagnostics report sent for {today_utc}")
 
-    direction = None
-    reasons = []
+    technical_direction = None
+    technical_reasons = []
     if (h4_trend["ema50"] > h4_trend["ema200"]
             and h4_trend["close"] > h4_trend["ema50"]
             and h1_trend["ema50"] > h1_trend["ema200"]
@@ -229,8 +334,8 @@ def main():
             and structure["label"] == "قمم وقيعان صاعدة"
             and last["close"] > m15[-2]["high"]
             and 50 <= last_rsi <= 68):
-        direction = "BUY"
-        reasons = ["اتجاه H4 صاعد", "تأكيد H1 صاعد", "هيكل M15 يصنع قمماً وقيعاناً صاعدة", "إغلاق M15 فوق EMA50 وفوق قمة الشمعة السابقة", "RSI ضمن نطاق الزخم الصاعد"]
+        technical_direction = "BUY"
+        technical_reasons = ["اتجاه H4 صاعد", "تأكيد H1 صاعد", "هيكل M15 يصنع قمماً وقيعاناً صاعدة", "إغلاق M15 فوق EMA50 وفوق قمة الشمعة السابقة", "RSI ضمن نطاق الزخم الصاعد"]
     elif (h4_trend["ema50"] < h4_trend["ema200"]
             and h4_trend["close"] < h4_trend["ema50"]
             and h1_trend["ema50"] < h1_trend["ema200"]
@@ -239,47 +344,84 @@ def main():
             and structure["label"] == "قمم وقيعان هابطة"
             and last["close"] < m15[-2]["low"]
             and 32 <= last_rsi <= 50):
-        direction = "SELL"
-        reasons = ["اتجاه H4 هابط", "تأكيد H1 هابط", "هيكل M15 يصنع قمماً وقيعاناً هابطة", "إغلاق M15 تحت EMA50 وتحت قاع الشمعة السابقة", "RSI ضمن نطاق الزخم الهابط"]
+        technical_direction = "SELL"
+        technical_reasons = ["اتجاه H4 هابط", "تأكيد H1 هابط", "هيكل M15 يصنع قمماً وقيعاناً هابطة", "إغلاق M15 تحت EMA50 وتحت قاع الشمعة السابقة", "RSI ضمن نطاق الزخم الهابط"]
 
-    if not direction:
-        print("NO TRADE: multi-timeframe conditions are not aligned.")
+    technical = build_technical_candidate(
+        technical_direction, last["close"], last_atr, technical_reasons
+    )
+    ict = ict_candidate(m15, last_atr)
+
+    if technical and ict and technical["direction"] != ict["direction"]:
+        print("NO TRADE: ICT and Technical strategies conflict.")
         return
+
+    if technical and ict:
+        selected = dict(technical)
+        selected["score"] = 90
+        selected["strategy"] = "ICT + Technical (confluence)"
+        selected["reasons"] = technical["reasons"] + ict["reasons"]
+        # Use the ICT-defined risk and entry zone when both strategies agree.
+        selected["entry"] = ict["entry"]
+        selected["stop"] = ict["stop"]
+        selected["risk"] = ict["risk"]
+        selected["zone_low"] = ict["zone_low"]
+        selected["zone_high"] = ict["zone_high"]
+    elif ict:
+        selected = ict
+    elif technical:
+        selected = technical
+    else:
+        print("NO TRADE: neither strategy produced a qualifying setup.")
+        return
+
+    if selected["score"] < 75:
+        print("NO TRADE: selected setup did not meet the quality threshold.")
+        return
+
+    direction = selected["direction"]
+    entry = selected["entry"]
+    stop = selected["stop"]
+    risk = selected["risk"]
+    tp1 = entry + 1.5 * risk if direction == "BUY" else entry - 1.5 * risk
+    tp2 = entry + 2.5 * risk if direction == "BUY" else entry - 2.5 * risk
+    tp3 = entry + 3.0 * risk if direction == "BUY" else entry - 3.0 * risk
 
     candle_time = last["time"]
     if state.get("last_signal_candle") == candle_time:
         print("Duplicate signal candle; nothing sent.")
         return
 
-    entry = last["close"]
-    risk = 1.5 * last_atr
-    if direction == "BUY":
-        stop = entry - risk
-        tp1 = entry + 1.5 * risk
-        tp2 = entry + 2.5 * risk
-        tp3 = entry + 3.0 * risk
-    else:
-        stop = entry + risk
-        tp1 = entry - 1.5 * risk
-        tp2 = entry - 2.5 * risk
-        tp3 = entry - 3.0 * risk
+    ict_status = f"{ict['direction']} (درجة {ict['score']}/100)" if ict else "لا توجد فرصة مستوفية للشروط"
+    technical_status = f"{technical['direction']} (درجة {technical['score']}/100)" if technical else "لا توجد فرصة مستوفية للشروط"
+    zone_text = (
+        f"منطقة FVG: {selected['zone_low']:.2f} — {selected['zone_high']:.2f}\\n"
+        if "zone_low" in selected else ""
+    )
 
     message = (
         f"📈 تقرير فرصة تداول — {direction}\\n"
         "الأداة: XAU/USD Spot (قد يختلف عن سعر HFM)\\n"
         f"وقت شمعة M15 المغلقة: {candle_time} UTC\\n\\n"
-        "التحليل الفني: توافق اتجاه H4 وH1 مع تأكيد هيكل M15.\\n"
-        f"هيكل M15: {structure['label']}\\n"
-        f"EMA50 M15: {m15_ema50:.2f} | RSI(14): {last_rsi:.1f} | ATR(14): {last_atr:.2f}\\n"
+        "مقارنة الاستراتيجيات المستقلة:\\n"
+        f"• ICT: {ict_status}\\n"
+        f"• Technical: {technical_status}\\n"
+        f"الاستراتيجية المختارة: {selected['strategy']}\\n"
+        f"قوة الإعداد التقديرية: {selected['score']}/100 (ليست نسبة نجاح)\\n\\n"
+        "التحليل الفني العام:\\n"
+        f"• H4: {classify_trend(h4_trend)} | H1: {classify_trend(h1_trend)}\\n"
+        f"• هيكل M15: {structure['label']}\\n"
+        f"• EMA50: {m15_ema50:.2f} | RSI(14): {last_rsi:.1f} | ATR(14): {last_atr:.2f}\\n"
+        + zone_text +
         f"Entry: {entry:.2f}\\n"
         f"SL: {stop:.2f}\\n"
         f"TP1: {tp1:.2f} | R:R = 1:1.5\\n"
         f"TP2: {tp2:.2f} | R:R = 1:2.5\\n"
         f"TP3: {tp3:.2f} | R:R = 1:3.0\\n"
-        "أسباب الدخول: " + "؛ ".join(reasons) + "\\n"
-        "التحليل الأساسي والأخبار: غير مدمج في قرار هذه الإشارة.\\n"
-        "Bookmap / Order Flow: غير متاح؛ لا توجد بيانات عمق سوق موصولة.\\n"
-        "إشارة تجريبية غير مختبرة ربحياً. تحققي من السعر والسبريد لدى HFM؛ لا تنفذيها على حساب حقيقي."
+        "أسباب الإعداد: " + "؛ ".join(selected["reasons"]) + "\\n"
+        "التحليل الأساسي والأخبار: غير مدمج.\\n"
+        "Bookmap / Order Flow: غير متاح؛ بيانات عمق السوق غير موصولة.\\n"
+        "ملاحظة: ICT هنا نموذج آلي تقريبي مبني على OHLC، وليس تطبيقاً كاملاً لكل قواعد ICT. الإشارة غير مختبرة ربحياً؛ لا تنفذيها على حساب حقيقي."
     )
     telegram_send(message)
     state["last_signal_candle"] = candle_time

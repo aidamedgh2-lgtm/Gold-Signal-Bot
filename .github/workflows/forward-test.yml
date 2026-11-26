@@ -1,0 +1,45 @@
+name: Gold 90-day forward paper test
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gold-forward-paper-test
+  cancel-in-progress: false
+
+jobs:
+  forward-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout main source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Load isolated test state branch
+        run: |
+          git fetch origin forward-test-data
+          git checkout -B forward-test-data origin/forward-test-data
+      - name: Run independent paper portfolios
+        env:
+          TWELVEDATA_API_KEY: \${{ secrets.TWELVEDATA_API_KEY }}
+        run: python forward_test.py
+      - name: Persist test state on isolated branch
+        run: |
+          if [ -n "$(git status --porcelain forward_test_state.json)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add forward_test_state.json
+            git commit -m "Update 90-day forward paper test state"
+            git push origin forward-test-data
+          fi

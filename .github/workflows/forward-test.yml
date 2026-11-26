@@ -1,6 +1,8 @@
 name: Gold 90-day forward paper test
 
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
@@ -32,7 +34,7 @@ jobs:
           git checkout -B forward-test-data origin/forward-test-data
       - name: Run independent paper portfolios
         env:
-          TWELVEDATA_API_KEY: \${{ secrets.TWELVEDATA_API_KEY }}
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
         run: python forward_test.py
       - name: Persist test state on isolated branch
         run: |

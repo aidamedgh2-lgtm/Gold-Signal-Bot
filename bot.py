@@ -115,6 +115,31 @@ def telegram_send(message):
         raise RuntimeError(f"Telegram error: {result}")
 
 
+def market_structure(candles, lookback=3, scan=80):
+    """Describe recent confirmed swing structure from closed candles."""
+    window = candles[-(scan + 2 * lookback + 1):]
+    highs, lows = [], []
+    for i in range(lookback, len(window) - lookback):
+        high, low = window[i]["high"], window[i]["low"]
+        left, right = window[i - lookback:i], window[i + 1:i + lookback + 1]
+        if all(high > x["high"] for x in left + right):
+            highs.append(high)
+        if all(low < x["low"] for x in left + right):
+            lows.append(low)
+    last_high = highs[-1] if highs else None
+    last_low = lows[-1] if lows else None
+    if len(highs) >= 2 and len(lows) >= 2:
+        if highs[-1] > highs[-2] and lows[-1] > lows[-2]:
+            label = "قمم وقيعان صاعدة"
+        elif highs[-1] < highs[-2] and lows[-1] < lows[-2]:
+            label = "قمم وقيعان هابطة"
+        else:
+            label = "هيكل متداخل / عرضي"
+    else:
+        label = "بيانات الهيكل غير كافية"
+    return {"label": label, "last_swing_high": last_high, "last_swing_low": last_low}
+
+
 def classify_trend(data):
     if data["ema50"] > data["ema200"] and data["close"] > data["ema50"]:
         return "صاعد"
@@ -150,6 +175,8 @@ def main():
     last = m15[-1]
     last_rsi = rsi(closes)
     last_atr = atr(m15)
+    m15_ema50 = ema(closes, 50)
+    structure = market_structure(m15)
     if not math.isfinite(last_atr) or last_atr <= 0:
         raise RuntimeError("Invalid ATR; refusing to create a signal")
 
@@ -160,7 +187,6 @@ def main():
     # The workflow runs every 15 minutes. Send one daily diagnostics report
     # after 20:00 UTC (21:00 in Algeria, UTC+1); delayed runs still send it.
     if now.hour >= 20 and state.get("daily_report_date") != today_utc:
-        m15_ema50 = ema(closes, 50)
         m15_status = "فوق EMA50" if last["close"] > m15_ema50 else "تحت أو عند EMA50"
         h4_status = classify_trend(h4_trend)
         h1_status = classify_trend(h1_trend)
@@ -172,19 +198,21 @@ def main():
             momentum = "محايد"
 
         report = (
-            "📊 التقرير اليومي — GOLD SIGNAL BOT\n"
-            f"التاريخ: {today_utc} (UTC)\n\n"
-            "التحليل الفني: متاح من بيانات Twelve Data\n"
-            f"• H4: {h4_status}\n"
-            f"• H1: {h1_status}\n"
-            f"• M15: {m15_status}\n"
-            f"• RSI(14): {last_rsi:.1f} — الزخم {momentum}\n"
-            f"• آخر إغلاق M15: {last['close']:.2f} (سعر مرجعي XAU/USD Spot)\n\n"
-            "التحليل الأساسي: غير مدمج حالياً — لا توجد تغذية أخبار/بيانات اقتصادية في البوت.\n"
-            "التحليل الزمني: غير مدمج — لا يوجد نموذج مستقل لدورات/توقيت السوق.\n"
-            "التحليل الموجي: غير مدمج — لم يتم احتساب موجات إليوت.\n"
-            "Bookmap وتدفق الأوامر: غير متصل — لا تتوفر بيانات عمق السوق/الأوامر.\n\n"
-            "القرار الآلي: هذا تقرير حالة وليس إشارة تداول. لا تنفذي صفقة بناءً عليه."
+            "📊 التقرير اليومي — GOLD SIGNAL BOT\\n"
+            f"التاريخ: {today_utc} (UTC)\\n\\n"
+            "التحليل الفني: بيانات الأسعار والمؤشرات متاحة من Twelve Data\\n"
+            f"• H4: {h4_status}\\n"
+            f"• H1: {h1_status}\\n"
+            f"• M15: {m15_status}\\n"
+            f"• هيكل M15: {structure['label']}\\n"
+            f"• RSI(14): {last_rsi:.1f} — الزخم {momentum}\\n"
+            f"• EMA50 M15: {m15_ema50:.2f} | ATR(14): {last_atr:.2f}\\n"
+            f"• آخر إغلاق M15: {last['close']:.2f} (سعر مرجعي XAU/USD Spot)\\n\\n"
+            "التحليل الأساسي: غير مدمج — لا توجد تغذية أخبار أو بيانات اقتصادية.\\n"
+            "التحليل الزمني: غير مدمج — لا يوجد نموذج مستقل لدورات/توقيت السوق.\\n"
+            "التحليل الموجي: غير مدمج — لم يتم احتساب موجات إليوت.\\n"
+            "Bookmap / Order Flow: غير متصل — لا تتوفر بيانات عمق السوق والأوامر.\\n\\n"
+            "القرار: هذا تقرير حالة وليس إشارة تداول. لا تنفذي صفقة بناءً عليه."
         )
         telegram_send(report)
         state["daily_report_date"] = today_utc
@@ -197,18 +225,22 @@ def main():
             and h4_trend["close"] > h4_trend["ema50"]
             and h1_trend["ema50"] > h1_trend["ema200"]
             and h1_trend["close"] > h1_trend["ema50"]
-            and last["close"] > ema(closes, 50)
+            and last["close"] > m15_ema50
+            and structure["label"] == "قمم وقيعان صاعدة"
+            and last["close"] > m15[-2]["high"]
             and 50 <= last_rsi <= 68):
         direction = "BUY"
-        reasons = ["اتجاه H4 صاعد", "تأكيد H1 صاعد", "إغلاق M15 فوق EMA50", "RSI ضمن نطاق الزخم الصاعد"]
+        reasons = ["اتجاه H4 صاعد", "تأكيد H1 صاعد", "هيكل M15 يصنع قمماً وقيعاناً صاعدة", "إغلاق M15 فوق EMA50 وفوق قمة الشمعة السابقة", "RSI ضمن نطاق الزخم الصاعد"]
     elif (h4_trend["ema50"] < h4_trend["ema200"]
             and h4_trend["close"] < h4_trend["ema50"]
             and h1_trend["ema50"] < h1_trend["ema200"]
             and h1_trend["close"] < h1_trend["ema50"]
-            and last["close"] < ema(closes, 50)
+            and last["close"] < m15_ema50
+            and structure["label"] == "قمم وقيعان هابطة"
+            and last["close"] < m15[-2]["low"]
             and 32 <= last_rsi <= 50):
         direction = "SELL"
-        reasons = ["اتجاه H4 هابط", "تأكيد H1 هابط", "إغلاق M15 تحت EMA50", "RSI ضمن نطاق الزخم الهابط"]
+        reasons = ["اتجاه H4 هابط", "تأكيد H1 هابط", "هيكل M15 يصنع قمماً وقيعاناً هابطة", "إغلاق M15 تحت EMA50 وتحت قاع الشمعة السابقة", "RSI ضمن نطاق الزخم الهابط"]
 
     if not direction:
         print("NO TRADE: multi-timeframe conditions are not aligned.")
@@ -225,22 +257,29 @@ def main():
         stop = entry - risk
         tp1 = entry + 1.5 * risk
         tp2 = entry + 2.5 * risk
+        tp3 = entry + 3.0 * risk
     else:
         stop = entry + risk
         tp1 = entry - 1.5 * risk
         tp2 = entry - 2.5 * risk
+        tp3 = entry - 3.0 * risk
 
     message = (
-        f"تنبيه تداول تجريبي — {direction}\n"
-        f"الأداة: XAU/USD Spot (ليس سعراً مضموناً مطابقاً لـ HFM)\n"
-        f"وقت شمعة M15 المغلقة: {candle_time} UTC\n"
-        f"السعر المرجعي: {entry:.2f}\n"
-        f"وقف الخسارة النظري: {stop:.2f}\n"
-        f"الهدف الأول: {tp1:.2f}\n"
-        f"الهدف الثاني: {tp2:.2f}\n"
-        f"RSI(14): {last_rsi:.1f}\n"
-        f"الأسباب: " + "؛ ".join(reasons) + "\n"
-        "ملاحظة: إشارة آلية أولية للاختبار فقط، وليست توصية مالية. تحققي من السعر والسبريد لدى وسيطك قبل أي قرار."
+        f"📈 تقرير فرصة تداول — {direction}\\n"
+        "الأداة: XAU/USD Spot (قد يختلف عن سعر HFM)\\n"
+        f"وقت شمعة M15 المغلقة: {candle_time} UTC\\n\\n"
+        "التحليل الفني: توافق اتجاه H4 وH1 مع تأكيد هيكل M15.\\n"
+        f"هيكل M15: {structure['label']}\\n"
+        f"EMA50 M15: {m15_ema50:.2f} | RSI(14): {last_rsi:.1f} | ATR(14): {last_atr:.2f}\\n"
+        f"Entry: {entry:.2f}\\n"
+        f"SL: {stop:.2f}\\n"
+        f"TP1: {tp1:.2f} | R:R = 1:1.5\\n"
+        f"TP2: {tp2:.2f} | R:R = 1:2.5\\n"
+        f"TP3: {tp3:.2f} | R:R = 1:3.0\\n"
+        "أسباب الدخول: " + "؛ ".join(reasons) + "\\n"
+        "التحليل الأساسي والأخبار: غير مدمج في قرار هذه الإشارة.\\n"
+        "Bookmap / Order Flow: غير متاح؛ لا توجد بيانات عمق سوق موصولة.\\n"
+        "إشارة تجريبية غير مختبرة ربحياً. تحققي من السعر والسبريد لدى HFM؛ لا تنفذيها على حساب حقيقي."
     )
     telegram_send(message)
     state["last_signal_candle"] = candle_time

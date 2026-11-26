@@ -19,4 +19,4 @@ jobs:
         with:
           python-version: '3.12'
       - name: Compile Python files
-        run: python -m py_compile bot.py backtest.py
+        run: python -m py_compile bot.py backtest.py forward_test.py

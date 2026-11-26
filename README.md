@@ -37,3 +37,22 @@ The bot must already have been created with Telegram's BotFather. Send a message
 ## Risk notice
 
 Alerts are for paper testing only. Entry, stop, and targets are calculated from provider candles and ATR; they are not broker-executable prices. Do not trade real money based on this prototype. Validate the data feed, test signals over historical data, and forward-test on a demo account first.
+
+
+## Historical strategy comparison (manual, paper research only)
+
+Open Actions → **Gold signal checks** → **Run workflow** and set
+`run_backtest=true` (leave `test_telegram=false`). This runs `backtest.py`
+without sending a Telegram trade alert or changing the live bot's signal state.
+The run requests up to 5,000 M15 XAU/USD candles from Twelve Data and creates
+`summary.json` and `trades.csv` as the **gold-strategy-backtest** workflow
+artifact. Download the artifact from that workflow run.
+
+The comparison evaluates the current Technical rules and a deliberately
+simplified, OHLC-based ICT proxy separately. Entries are modeled at the next
+M15 candle open; a 2R target, 48-bar maximum holding period, and conservative
+stop-first handling are used. Results omit spread, slippage, commissions,
+swaps, and HFM feed differences. The available history may be too short for
+statistical conclusions, especially for higher-timeframe EMA warm-up. Treat
+this as an initial diagnostic, not proof of profitability or a basis for live
+trading. The scheduled bot continues its normal alert-only workflow.

@@ -70,8 +70,13 @@ def fetch_m15(days=None, outputsize=5000):
             datetime.strptime(item["datetime"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
             for item in values
         )
-        if oldest <= start_time or len(values) < outputsize:
+        if oldest <= start_time:
             break
+        if len(values) < outputsize:
+            raise RuntimeError(
+                f"Twelve Data history ends at {oldest:%Y-%m-%d %H:%M:%S} UTC; "
+                f"the requested {days}-day window starts at {start_time:%Y-%m-%d %H:%M:%S} UTC."
+            )
         next_end = oldest - timedelta(seconds=1)
         if next_end >= end_time:
             raise RuntimeError("Historical pagination made no progress.")

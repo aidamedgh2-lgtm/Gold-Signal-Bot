@@ -353,7 +353,7 @@ def main():
             f"• RSI(14): {last_rsi:.1f} — الزخم {momentum}\\n"
             f"• EMA50 M15: {m15_ema50:.2f} | ATR(14): {last_atr:.2f}\\n"
             f"• آخر إغلاق M15: {last['close']:.2f} (سعر مرجعي XAU/USD Spot)\\n\\n"
-            + (f"• Fibonacci M15: أقرب مستوى {fib['nearest_ratio']:.3f} عند {fib['nearest_price']:.2f} | المسافة {fib['distance']:.2f} | تقليدي قريب: {'نعم' if fib['classic_near'] else 'لا'} | 0.705 قريب: {'نعم' if fib['705_near'] else 'لا'}\\n" if fib.get('available') else '• Fibonacci M15: لا يوجد Swing واضح صالح للحساب\\n')
+            + (f"• Fibonacci M15: أقرب مستوى {fib['nearest_ratio']:.3f} عند {fib['nearest_price']:.2f} | المسافة {fib['distance']:.2f} | تقليدي قريب: {'نعم' if fib['classic_near'] else 'لا'} | 0.705 قريب: {'نعم' if fib['705_near'] else 'لا'}\\n" if fib.get('available') else '• Fibonacci M15: لا يوجد Swing واضح صالح للحساب\\n') +
             "التحليل الأساسي: غير مدمج — لا توجد تغذية أخبار أو بيانات اقتصادية.\\n"
             "التحليل الزمني: غير مدمج — لا يوجد نموذج مستقل لدورات/توقيت السوق.\\n"
             "التحليل الموجي: غير مدمج — لم يتم احتساب موجات إليوت.\\n"

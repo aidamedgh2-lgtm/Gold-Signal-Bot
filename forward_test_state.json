@@ -1,0 +1,19 @@
+{
+  "test_start_utc": "2026-11-26T19:26:12.333198+00:00",
+  "test_end_utc": "2027-02-24T19:26:12.333198+00:00",
+  "strategy_version": "live-ict-proxy-v1__fib-classic-v1__next-open__2R__48bars",
+  "feed": "XAU/USD Spot - Twelve Data",
+  "timeframe": "M15",
+  "last_processed_candle": "2026-11-26 19:00:00",
+  "processed_candles": 0,
+  "books": {
+    "ICT": {
+      "active": null,
+      "trades": []
+    },
+    "ICT + Fibonacci Classic": {
+      "active": null,
+      "trades": []
+    }
+  }
+}

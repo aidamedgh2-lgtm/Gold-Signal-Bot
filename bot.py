@@ -115,6 +115,30 @@ def telegram_send(message):
         raise RuntimeError(f"Telegram error: {result}")
 
 
+def classify_trend(data):
+    if data["ema50"] > data["ema200"] and data["close"] > data["ema50"]:
+        return "صاعد"
+    if data["ema50"] < data["ema200"] and data["close"] < data["ema50"]:
+        return "هابط"
+    return "محايد أو تصحيح"
+
+
+def load_state():
+    if STATE_FILE.exists():
+        try:
+            return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def save_state(state):
+    STATE_FILE.write_text(
+        json.dumps(state, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 def main():
     h4 = fetch_candles("4h")
     h1 = fetch_candles("1h")
@@ -128,6 +152,44 @@ def main():
     last_atr = atr(m15)
     if not math.isfinite(last_atr) or last_atr <= 0:
         raise RuntimeError("Invalid ATR; refusing to create a signal")
+
+    state = load_state()
+    now = datetime.now(timezone.utc)
+    today_utc = now.strftime("%Y-%m-%d")
+
+    # The workflow runs every 15 minutes. Send one daily diagnostics report
+    # during the 20:00 UTC run window (21:00 in Algeria, UTC+1).
+    if now.hour == 20 and now.minute < 15 and state.get("daily_report_date") != today_utc:
+        m15_ema50 = ema(closes, 50)
+        m15_status = "فوق EMA50" if last["close"] > m15_ema50 else "تحت أو عند EMA50"
+        h4_status = classify_trend(h4_trend)
+        h1_status = classify_trend(h1_trend)
+        if last_rsi > 55:
+            momentum = "يميل للصعود"
+        elif last_rsi < 45:
+            momentum = "يميل للهبوط"
+        else:
+            momentum = "محايد"
+
+        report = (
+            "📊 التقرير اليومي — GOLD SIGNAL BOT\\n"
+            f"التاريخ: {today_utc} (UTC)\\n\\n"
+            "التحليل الفني: متاح من بيانات Twelve Data\\n"
+            f"• H4: {h4_status}\\n"
+            f"• H1: {h1_status}\\n"
+            f"• M15: {m15_status}\\n"
+            f"• RSI(14): {last_rsi:.1f} — الزخم {momentum}\\n"
+            f"• آخر إغلاق M15: {last['close']:.2f} (سعر مرجعي XAU/USD Spot)\\n\\n"
+            "التحليل الأساسي: غير مدمج حالياً — لا توجد تغذية أخبار/بيانات اقتصادية في البوت.\\n"
+            "التحليل الزمني: غير مدمج — لا يوجد نموذج مستقل لدورات/توقيت السوق.\\n"
+            "التحليل الموجي: غير مدمج — لم يتم احتساب موجات إليوت.\\n"
+            "Bookmap وتدفق الأوامر: غير متصل — لا تتوفر بيانات عمق السوق/الأوامر.\\n\\n"
+            "القرار الآلي: هذا تقرير حالة وليس إشارة تداول. لا تنفذي صفقة بناءً عليه."
+        )
+        telegram_send(report)
+        state["daily_report_date"] = today_utc
+        save_state(state)
+        print(f"Daily diagnostics report sent for {today_utc}")
 
     direction = None
     reasons = []
@@ -153,12 +215,6 @@ def main():
         return
 
     candle_time = last["time"]
-    state = {}
-    if STATE_FILE.exists():
-        try:
-            state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            state = {}
     if state.get("last_signal_candle") == candle_time:
         print("Duplicate signal candle; nothing sent.")
         return
@@ -175,24 +231,22 @@ def main():
         tp2 = entry - 2.5 * risk
 
     message = (
-        f"تنبيه تداول تجريبي — {direction}\n"
-        f"الأداة: XAU/USD Spot (ليس سعراً مضموناً مطابقاً لـ HFM)\n"
-        f"وقت شمعة M15 المغلقة: {candle_time} UTC\n"
-        f"السعر المرجعي: {entry:.2f}\n"
-        f"وقف الخسارة النظري: {stop:.2f}\n"
-        f"الهدف الأول: {tp1:.2f}\n"
-        f"الهدف الثاني: {tp2:.2f}\n"
-        f"RSI(14): {last_rsi:.1f}\n"
-        f"الأسباب: " + "؛ ".join(reasons) + "\n"
+        f"تنبيه تداول تجريبي — {direction}\\n"
+        f"الأداة: XAU/USD Spot (ليس سعراً مضموناً مطابقاً لـ HFM)\\n"
+        f"وقت شمعة M15 المغلقة: {candle_time} UTC\\n"
+        f"السعر المرجعي: {entry:.2f}\\n"
+        f"وقف الخسارة النظري: {stop:.2f}\\n"
+        f"الهدف الأول: {tp1:.2f}\\n"
+        f"الهدف الثاني: {tp2:.2f}\\n"
+        f"RSI(14): {last_rsi:.1f}\\n"
+        f"الأسباب: " + "؛ ".join(reasons) + "\\n"
         "ملاحظة: إشارة آلية أولية للاختبار فقط، وليست توصية مالية. تحققي من السعر والسبريد لدى وسيطك قبل أي قرار."
     )
     telegram_send(message)
-    STATE_FILE.write_text(
-        json.dumps({"last_signal_candle": candle_time, "direction": direction}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    state["last_signal_candle"] = candle_time
+    state["direction"] = direction
+    save_state(state)
     print(f"Signal sent for closed M15 candle {candle_time}")
-
 
 if __name__ == "__main__":
     main()

@@ -50,7 +50,7 @@ jobs:
           url = f"https://api.telegram.org/bot{token}/sendMessage"
           body = urllib.parse.urlencode({
               "chat_id": chat_id,
-              "text": "✅ TEST — Gold Signal Bot\\nاتصال Telegram يعمل. هذه رسالة اختبار فقط وليست إشارة تداول.",
+              "text": "✅ TEST — Gold Signal Bot\nاتصال Telegram يعمل. هذه رسالة اختبار فقط وليست إشارة تداول.",
               "disable_web_page_preview": "true",
           }).encode()
           request = urllib.request.Request(url, data=body, method="POST")
@@ -61,7 +61,12 @@ jobs:
           print("Telegram test message sent successfully.")
           PY
 
+      - name: Validate Python syntax
+        if: ${{ !inputs.test_telegram }}
+        run: python -m py_compile bot.py
+
       - name: Run signal analysis
+        if: ${{ !inputs.test_telegram }}
         env:
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

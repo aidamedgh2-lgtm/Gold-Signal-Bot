@@ -253,6 +253,45 @@ def classify_trend(data):
     return "محايد أو تصحيح"
 
 
+def fibonacci_analysis(candles, current_atr, lookback=3, scan=80):
+    """Return Fibonacci retracement levels from the latest confirmed swing.
+    Informational only: this function does not alter live trade selection.
+    """
+    window = candles[-(scan + 2 * lookback + 1):]
+    highs, lows = [], []
+    for i in range(lookback, len(window) - lookback):
+        high, low = window[i]["high"], window[i]["low"]
+        neighbors = window[i - lookback:i] + window[i + 1:i + lookback + 1]
+        if all(high > x["high"] for x in neighbors): highs.append((i, high))
+        if all(low < x["low"] for x in neighbors): lows.append((i, low))
+    label = market_structure(candles, lookback=lookback, scan=scan)["label"]
+    direction = "BUY" if label == "قمم وقيعان صاعدة" else ("SELL" if label == "قمم وقيعان هابطة" else None)
+    if direction == "BUY":
+        pairs = [(lo, hi) for lo in lows for hi in highs if lo[0] < hi[0]]
+        if not pairs: return {"available": False}
+        lo, hi = max(pairs, key=lambda pair: pair[1][0])
+        swing_low, swing_high = lo[1], hi[1]
+        span = swing_high - swing_low
+        levels = {r: swing_high - span * r for r in (0.382, 0.500, 0.618, 0.705, 0.786)}
+    elif direction == "SELL":
+        pairs = [(hi, lo) for hi in highs for lo in lows if hi[0] < lo[0]]
+        if not pairs: return {"available": False}
+        hi, lo = max(pairs, key=lambda pair: pair[1][0])
+        swing_high, swing_low = hi[1], lo[1]
+        span = swing_high - swing_low
+        levels = {r: swing_low + span * r for r in (0.382, 0.500, 0.618, 0.705, 0.786)}
+    else:
+        return {"available": False}
+    if span <= 0: return {"available": False}
+    price = candles[-1]["close"]
+    ratio, level_price = min(levels.items(), key=lambda item: abs(price - item[1]))
+    tolerance = 0.15 * current_atr
+    return {"available": True, "direction": direction, "levels": levels,
+            "nearest_ratio": ratio, "nearest_price": level_price,
+            "distance": abs(price - level_price),
+            "classic_near": any(abs(price - levels[x]) <= tolerance for x in (0.382, 0.500, 0.618, 0.786)),
+            "705_near": abs(price - levels[0.705]) <= tolerance}
+
 def load_state():
     if STATE_FILE.exists():
         try:
@@ -282,6 +321,7 @@ def main():
     last_atr = atr(m15)
     m15_ema50 = ema(closes, 50)
     structure = market_structure(m15)
+    fib = fibonacci_analysis(m15, last_atr)
     if not math.isfinite(last_atr) or last_atr <= 0:
         raise RuntimeError("Invalid ATR; refusing to create a signal")
 
@@ -313,6 +353,7 @@ def main():
             f"• RSI(14): {last_rsi:.1f} — الزخم {momentum}\\n"
             f"• EMA50 M15: {m15_ema50:.2f} | ATR(14): {last_atr:.2f}\\n"
             f"• آخر إغلاق M15: {last['close']:.2f} (سعر مرجعي XAU/USD Spot)\\n\\n"
+            + (f"• Fibonacci M15: أقرب مستوى {fib['nearest_ratio']:.3f} عند {fib['nearest_price']:.2f} | المسافة {fib['distance']:.2f} | تقليدي قريب: {'نعم' if fib['classic_near'] else 'لا'} | 0.705 قريب: {'نعم' if fib['705_near'] else 'لا'}\\n" if fib.get('available') else '• Fibonacci M15: لا يوجد Swing واضح صالح للحساب\\n')
             "التحليل الأساسي: غير مدمج — لا توجد تغذية أخبار أو بيانات اقتصادية.\\n"
             "التحليل الزمني: غير مدمج — لا يوجد نموذج مستقل لدورات/توقيت السوق.\\n"
             "التحليل الموجي: غير مدمج — لم يتم احتساب موجات إليوت.\\n"
@@ -412,6 +453,7 @@ def main():
         f"• H4: {classify_trend(h4_trend)} | H1: {classify_trend(h1_trend)}\\n"
         f"• هيكل M15: {structure['label']}\\n"
         f"• EMA50: {m15_ema50:.2f} | RSI(14): {last_rsi:.1f} | ATR(14): {last_atr:.2f}\\n"
+        + (f"• Fibonacci: أقرب مستوى {fib['nearest_ratio']:.3f} عند {fib['nearest_price']:.2f} | المسافة {fib['distance']:.2f} | تقليدي قريب: {'نعم' if fib['classic_near'] else 'لا'} | 0.705 قريب: {'نعم' if fib['705_near'] else 'لا'}\\n" if fib.get('available') else '• Fibonacci: لا يوجد Swing واضح صالح للحساب\\n')
         + zone_text +
         f"Entry: {entry:.2f}\\n"
         f"SL: {stop:.2f}\\n"

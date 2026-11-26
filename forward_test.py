@@ -176,6 +176,9 @@ def process_bar(state, bars, i):
                     "r": round(result, 6), "exit_reason": "stop" if hit_stop else ("target" if hit_target else "timeout")})
                 book["active"] = None
         if had_active or book.get("active") is not None: continue
+        bar_open_time = datetime.strptime(bar["time"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        if bar_open_time < datetime.fromisoformat(state["test_start_utc"]):
+            continue
         prefix = bars[:i]
         signal_atr = atr(prefix)
         if signal_atr is None: continue
@@ -205,7 +208,20 @@ def main():
         return
     if state.get("strategy_version") != STRATEGY_VERSION: raise RuntimeError("Strategy version mismatch; refusing to mix results.")
     if now >= datetime.fromisoformat(state["test_end_utc"]):
-        print("90-day test period ended.")
+        final_bar = bars[-1]
+        for book in state["books"].values():
+            active = book.get("active")
+            if active:
+                risk = active["risk"]
+                result_r = ((final_bar["close"]-active["entry"])/risk if active["direction"] == "BUY"
+                            else (active["entry"]-final_bar["close"])/risk)
+                book["trades"].append({"signal_time": active["signal_time"], "entry_time": active["entry_time"],
+                    "exit_time": final_bar["time"], "direction": active["direction"], "entry": active["entry"],
+                    "stop": active["stop"], "r": round(result_r, 6), "exit_reason": "test_end"})
+                book["active"] = None
+        state["completed_utc"] = now.isoformat()
+        save_state(state)
+        print("90-day test period ended; any remaining paper positions were marked to the final available close.")
         print(json.dumps({k: metrics(v["trades"]) for k, v in state["books"].items()}, ensure_ascii=False, indent=2))
         return
     times = [b["time"] for b in bars]

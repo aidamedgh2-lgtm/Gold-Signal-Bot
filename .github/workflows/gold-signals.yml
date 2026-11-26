@@ -68,7 +68,7 @@ jobs:
 
       - name: Validate Python syntax
         if: ${{ !inputs.test_telegram }}
-        run: python -m py_compile bot.py
+        run: python -m py_compile bot.py backtest.py
 
       - name: Run historical strategy backtest
         if: ${{ inputs.run_backtest && !inputs.test_telegram }}

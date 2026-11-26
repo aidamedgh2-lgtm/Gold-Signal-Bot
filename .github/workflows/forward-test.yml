@@ -3,6 +3,9 @@ name: Gold 90-day forward paper test
 on:
   push:
     branches: [main]
+    paths:
+      - "forward_test.py"
+      - ".github/workflows/forward-test.yml"
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:

@@ -2,6 +2,12 @@ name: Gold signal checks
 
 on:
   workflow_dispatch:
+    inputs:
+      test_telegram:
+        description: 'Send a Telegram TEST message (no trade signal)'
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: "*/15 * * * *"
 
@@ -26,6 +32,34 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Send Telegram connection test
+        if: ${{ inputs.test_telegram }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          token = os.environ["TELEGRAM_BOT_TOKEN"]
+          chat_id = os.environ["TELEGRAM_CHAT_ID"]
+          url = f"https://api.telegram.org/bot{token}/sendMessage"
+          body = urllib.parse.urlencode({
+              "chat_id": chat_id,
+              "text": "✅ TEST — Gold Signal Bot\\nاتصال Telegram يعمل. هذه رسالة اختبار فقط وليست إشارة تداول.",
+              "disable_web_page_preview": "true",
+          }).encode()
+          request = urllib.request.Request(url, data=body, method="POST")
+          with urllib.request.urlopen(request, timeout=25) as response:
+              result = json.loads(response.read().decode("utf-8"))
+          if not result.get("ok"):
+              raise RuntimeError(f"Telegram error: {result}")
+          print("Telegram test message sent successfully.")
+          PY
 
       - name: Run signal analysis
         env:

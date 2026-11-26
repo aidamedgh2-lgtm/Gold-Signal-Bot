@@ -6,11 +6,11 @@ A first-version, alert-only XAU/USD technical-analysis bot. It does **not** conn
 
 - H4: EMA 50 / EMA 200 trend alignment
 - H1: EMA 50 / EMA 200 confirmation
-- M15: close relative to EMA 50 and RSI(14)
-- ATR(14): indicative stop-loss and target distances
-- Sends BUY or SELL only when all initial conditions align; otherwise sends nothing (NO TRADE).
+- M15: EMA 50, RSI(14), confirmed swing structure (higher highs/higher lows or lower highs/lower lows), and a close beyond the previous candle high/low
+- ATR(14): indicative stop-loss and three target distances (TP1/TP2/TP3)
+- Sends BUY or SELL only when H4/H1 trend, M15 structure, candle trigger, and RSI conditions align; otherwise sends nothing (NO TRADE).
 
-This is a basic prototype, not a validated profitable strategy. It does not yet include news filtering, support/resistance validation, spread checks, or historical backtesting.
+This remains an experimental prototype, not a validated profitable strategy. Swing-structure confirmation is a simple rule-based filter and is not a full market-structure/BOS/CHOCH model. It does not yet include news filtering, economic-calendar data, validated support/resistance zones, broker spread checks, Elliott-wave analysis, session statistics, Bookmap/order-flow data, or historical backtesting.
 
 ## Important market-data limitation
 
@@ -28,7 +28,7 @@ Create these GitHub Actions repository secrets (Settings → Secrets and variabl
 
 Do not put secret values in source files, issues, or chat messages.
 
-Then open Actions → **Gold signal checks** → **Run workflow** for a manual test. The workflow is also scheduled every 15 minutes. GitHub scheduled workflows are best-effort and can run late; this is not a real-time or 24/7 execution guarantee.
+Then open Actions → **Gold signal checks** → **Run workflow**. Select `test_telegram=true` only to send a Telegram connectivity test; that run will not execute market analysis. Leave it false for a normal analysis run, which first checks Python syntax. The workflow is also scheduled every 15 minutes. GitHub scheduled workflows are best-effort and can run late; this is not a real-time or 24/7 execution guarantee.
 
 ## Telegram
 

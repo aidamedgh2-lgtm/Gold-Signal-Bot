@@ -86,7 +86,8 @@ def aggregate(bars, hours):
     result = []
     for group in groups.values():
         if len(group) == hours * 4:
-            result.append({"time": group[-1]["time"], "open": group[0]["open"],
+            bucket_end = datetime.fromtimestamp((bucket + 1) * hours * 3600, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            result.append({"time": bucket_end, "open": group[0]["open"],
                            "high": max(x["high"] for x in group), "low": min(x["low"] for x in group),
                            "close": group[-1]["close"]})
     return result

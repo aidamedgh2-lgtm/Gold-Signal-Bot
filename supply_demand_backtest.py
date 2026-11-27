@@ -189,7 +189,7 @@ def score_candidates(all_zones, price):
             if other is not zone and other["direction"] == zone["direction"]
             and other["tf"] != zone["tf"] and live.overlaps(zone, other)
             and max(other["low"] - price, 0, price - other["high"])
-                <= live.MAX_NEAR_ATR * zone["atr"]
+                <= live.MAX_NEAR_ATR * other["atr"]
             and not (
                 (other["direction"] == "DEMAND" and price < other["low"] - 0.15 * other["atr"])
                 or (other["direction"] == "SUPPLY" and price > other["high"] + 0.15 * other["atr"])
@@ -305,7 +305,17 @@ def run():
     trades, seen_zones = [], set()
     last_exit_index = -1
     signal_count = 0
+    diagnostics = {
+        "decision_bars": 0,
+        "zones_detected": 0,
+        "candidates_after_price_filters": 0,
+        "decisions_with_candidates": 0,
+        "best_score_above_8": 0,
+        "confirmation_matches": 0,
+        "best_score_histogram": {str(score): 0 for score in range(11)},
+    }
     for i in range(34, len(m15)):
+        diagnostics["decision_bars"] += 1
         decision_time = m15[i]["_end"]
         price = m15[i]["close"]
         all_zones = []
@@ -317,17 +327,23 @@ def run():
                 prefix = strip_internal(histories[label][:n])
             if len(prefix) >= 35:
                 all_zones.extend(live.detect_zones(prefix, label))
+        diagnostics["zones_detected"] += len(all_zones)
         if not all_zones:
             continue
         candidates = score_candidates(all_zones, price)
+        diagnostics["candidates_after_price_filters"] += len(candidates)
         if not candidates:
             continue
+        diagnostics["decisions_with_candidates"] += 1
         best = candidates[0]
+        diagnostics["best_score_histogram"][str(best["score"])] += 1
         if best["score"] <= 8:
             continue
+        diagnostics["best_score_above_8"] += 1
         confirmation = live.confirmation(m15_plain[:i+1], best)
         if not confirmation:
             continue
+        diagnostics["confirmation_matches"] += 1
         zone_id = (f'{best["tf"]}:{best["direction"]}:{best["low"]:.2f}:'
                    f'{best["high"]:.2f}:{best["created"]}')
         if zone_id in seen_zones:
@@ -369,6 +385,7 @@ def run():
         "position_policy": "one position at a time; no overlapping trades",
         "cost_model": f"fixed {COST_R:.4f}R deducted per closed trade; proxy, not measured spread/slippage",
         "signal_count_before_position_filter": signal_count,
+        "diagnostics": diagnostics,
         "timeframes": {label: {"bars": len(histories[label]),
                                "first": histories[label][0]["time"],
                                "last": histories[label][-1]["time"]}

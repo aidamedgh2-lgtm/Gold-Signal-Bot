@@ -58,13 +58,16 @@ jobs:
                   )
 
               values = sorted(payload["values"], key=lambda row: row["datetime"])
+              timestamps = [row.get("datetime") for row in values]
+              if any(not stamp for stamp in timestamps) or len(set(timestamps)) != len(timestamps):
+                  raise SystemExit(f"{interval}: missing or duplicate candle timestamps.")
               if len(values) < 100:
                   raise SystemExit(
                       f"{interval}: only {len(values)} candles returned; "
                       "not enough even for a basic data-access check."
                   )
 
-              print(f"\\n{interval} — ACCESS OK")
+              print(f"\n{interval} — ACCESS OK")
               print("Symbol:", (payload.get("meta") or {}).get("symbol", "not specified"))
               print("Interval:", (payload.get("meta") or {}).get("interval", interval))
               print("Candles returned:", len(values))
@@ -76,5 +79,5 @@ jobs:
               ))
               print("Volume field present in sample:", "volume" in values[0])
 
-          print("\\nDATA ACCESS CHECK PASSED. This confirms endpoint access only; it does not test strategy performance.")
+          print("\nDATA ACCESS CHECK PASSED. This confirms endpoint access only; it does not test strategy performance.")
           PY

@@ -1,0 +1,114 @@
+name: FinzData GC data check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-finzdata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check free COMEX Gold futures data
+        env:
+          FINZDATA_API_KEY: ${{ secrets.FINZDATA_API_KEY }}
+        run: |
+          python - <<'PY'
+          import datetime as dt
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          key = os.environ.get("FINZDATA_API_KEY", "").strip()
+          if not key:
+              raise SystemExit("FINZDATA_API_KEY is missing. Check repository Actions secrets.")
+
+          today = dt.datetime.now(dt.timezone.utc).date()
+          start = today - dt.timedelta(days=30)
+
+          def request(path, params):
+              url = "https://api.finzdata.com" + path + "?" + urllib.parse.urlencode(params)
+              req = urllib.request.Request(
+                  url,
+                  headers={"X-API-Key": key, "Accept": "application/json",
+                           "User-Agent": "Gold-Signal-Bot-FinzData-Check/1.0"}
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=25) as response:
+                      return response.status, json.loads(response.read().decode("utf-8"))
+              except urllib.error.HTTPError as exc:
+                  body = exc.read().decode("utf-8", errors="replace")
+                  return exc.code, body[:1200]
+
+          def extract_rows(payload):
+              if isinstance(payload, list):
+                  return payload
+              if isinstance(payload, dict):
+                  for name in ("bars", "data", "results", "values", "rows"):
+                      value = payload.get(name)
+                      if isinstance(value, list):
+                          return value
+              return []
+
+          print("Checking FinzData authentication and free GC daily futures bars...")
+          status, daily = request("/v1/futures/daily", {
+              "root": "GC", "continuous": "true",
+              "start": start.isoformat(), "end": today.isoformat()
+          })
+          print("Daily endpoint HTTP status:", status)
+          if status != 200:
+              print("Daily endpoint response:", daily)
+              raise SystemExit("Daily GC data request failed. Check key, endpoint access, or plan.")
+
+          rows = extract_rows(daily)
+          print("Daily bars returned:", len(rows))
+          if isinstance(daily, dict):
+              print("Response keys:", sorted(daily.keys()))
+          if not rows:
+              print("Response preview:", json.dumps(daily, ensure_ascii=False)[:2500])
+              raise SystemExit("Connected, but no daily bars were found in the response.")
+
+          with_volume = [r for r in rows if isinstance(r, dict) and r.get("volume") not in (None, "")]
+          print("Daily bars with non-empty Volume:", len(with_volume))
+          print("Sample daily rows:")
+          for row in rows[:3]:
+              if isinstance(row, dict):
+                  print(json.dumps({k: row.get(k) for k in
+                      ("date", "datetime", "timestamp", "contract", "open", "high",
+                       "low", "close", "volume", "open_interest")}, ensure_ascii=False))
+
+          if not with_volume:
+              print("No Volume field found. Sample response:", json.dumps(rows[:2], ensure_ascii=False)[:2500])
+              raise SystemExit("Daily GC bars returned, but Volume is absent or empty.")
+
+          print("PASS: Free-tier daily GC bars include a non-empty Volume field.")
+
+          print("Checking whether 15-minute GC bars are accessible on this key...")
+          intraday_status, intraday = request("/v1/futures/bars", {
+              "root": "GC", "interval": "15min",
+              "start": (today - dt.timedelta(days=2)).isoformat(),
+              "end": today.isoformat(), "continuous": "true"
+          })
+          print("15-minute endpoint HTTP status:", intraday_status)
+          if intraday_status == 200:
+              intraday_rows = extract_rows(intraday)
+              intraday_volume = [r for r in intraday_rows
+                                 if isinstance(r, dict) and r.get("volume") not in (None, "")]
+              print("15-minute bars returned:", len(intraday_rows))
+              print("15-minute bars with non-empty Volume:", len(intraday_volume))
+              if intraday_rows:
+                  print("15-minute sample:", json.dumps(intraday_rows[:2], ensure_ascii=False)[:2000])
+              if intraday_volume:
+                  print("PASS: 15-minute GC bars and Volume are accessible with this key.")
+              else:
+                  print("15-minute data responded, but no non-empty Volume was present.")
+          elif intraday_status in (401, 403):
+              print("15-minute data is not included for this key/plan; daily free data remains separately verified.")
+              print("Plan response:", intraday)
+          else:
+              print("15-minute check returned an unexpected response:", intraday)
+          PY

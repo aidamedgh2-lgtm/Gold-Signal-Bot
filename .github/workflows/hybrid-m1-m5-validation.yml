@@ -30,7 +30,7 @@ permissions:
 
 concurrency:
   group: hybrid-m1-m5-validation
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   hybrid-research:

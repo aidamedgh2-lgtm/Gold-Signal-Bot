@@ -92,9 +92,9 @@ def count_zone_visits(
 
 
 def visit_points(visits: int) -> int:
-    if visits < 0:
-        raise ValueError("visits cannot be negative")
-    return 2 if visits <= 1 else (1 if visits == 2 else 0)
+    if visits < 1:
+        raise ValueError("zone has not been revisited; visit score is not applicable")
+    return 2 if visits == 1 else (1 if visits == 2 else 0)
 
 
 def duration_points(bars: Sequence[Mapping[str, float]], zone_low: float, zone_high: float) -> tuple[int, int]:

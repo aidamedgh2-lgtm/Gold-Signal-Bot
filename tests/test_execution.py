@@ -6,6 +6,7 @@ os.environ.setdefault("TWELVEDATA_API_KEY", "offline-test-key")
 
 import backtest
 import forward_test
+import supply_demand_live
 
 
 def candle(stamp, open_, high, low, close):
@@ -95,6 +96,32 @@ class ForwardPaperExecutionTests(unittest.TestCase):
         for book in state["books"].values():
             self.assertEqual(book["trades"], [])
             self.assertIsNone(book["active"])
+
+
+class LiveConfirmationTests(unittest.TestCase):
+    def test_demand_bullish_engulfing_confirms(self):
+        bars = [
+            candle("2026-11-27 12:00:00", 100.5, 100.8, 99.2, 99.5),
+            candle("2026-11-27 12:15:00", 99.4, 100.8, 99.3, 100.6),
+        ]
+        zone = {"direction": "DEMAND", "low": 99.0, "high": 100.0}
+        self.assertEqual(supply_demand_live.confirmation(bars, zone), "Engulfing")
+
+    def test_supply_bearish_engulfing_confirms(self):
+        bars = [
+            candle("2026-11-27 12:00:00", 99.5, 100.8, 99.2, 100.5),
+            candle("2026-11-27 12:15:00", 100.6, 100.7, 99.2, 99.4),
+        ]
+        zone = {"direction": "SUPPLY", "low": 100.0, "high": 101.0}
+        self.assertEqual(supply_demand_live.confirmation(bars, zone), "Engulfing")
+
+    def test_confirmation_rejected_when_neither_candle_touches_zone(self):
+        bars = [
+            candle("2026-11-27 12:00:00", 100, 101, 99.5, 100.5),
+            candle("2026-11-27 12:15:00", 100.5, 101.5, 100, 101),
+        ]
+        zone = {"direction": "DEMAND", "low": 95.0, "high": 96.0}
+        self.assertIsNone(supply_demand_live.confirmation(bars, zone))
 
 
 if __name__ == "__main__":

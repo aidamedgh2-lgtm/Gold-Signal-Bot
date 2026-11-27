@@ -181,10 +181,15 @@ def main():
             for item in zones:
                 zone = {**item, "tf": label, "created": item["origin_start"]}
                 visual = assess_candidate(bars, zone, OPENAI_API_KEY, OPENAI_VISION_MODEL)
+                departure_agrees = visual["departure"] == item["departure"]
+                visually_usable = departure_agrees and visual["zone_readability"] == "clear"
+                status = "VISUAL REVIEW AGREES" if visually_usable else "UNRESOLVED — NO SIGNAL"
                 observations.append(
                     f'{label} {item["direction"]} {item["low"]:.2f}–{item["high"]:.2f} '
-                    f'| departure={item["departure"]} | approach={visual["approach"]} '
-                    f'| readability={visual["zone_readability"]} '
+                    f'| detector departure={item["departure"]} '
+                    f'| reviewer departure={visual["departure"]} '
+                    f'| approach={visual["approach"]} '
+                    f'| readability={visual["zone_readability"]} | {status} '
                     f'| confidence={item["confidence"]:.0%}/{visual["confidence"]:.0%} '
                     f'| evidence={item["evidence"]}'
                 )

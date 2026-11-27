@@ -1,0 +1,49 @@
+name: PDF strategy visual historical replay
+
+on:
+  workflow_dispatch:
+    inputs:
+      replay_days:
+        description: "Twelve Data lookback window"
+        required: true
+        default: "30"
+        type: choice
+        options: ["7", "14", "30", "60", "90"]
+      replay_snapshots:
+        description: "Chronological checkpoints"
+        required: true
+        default: "6"
+        type: choice
+        options: ["2", "4", "6", "8", "10", "12"]
+
+permissions:
+  contents: read
+
+jobs:
+  visual-replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: validation/golden-case-baseline
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run chronological visual replay
+        env:
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_VISION_MODEL: gpt-4.1-mini
+          REPLAY_DAYS: ${{ inputs.replay_days }}
+          REPLAY_SNAPSHOTS: ${{ inputs.replay_snapshots }}
+        run: python -m backtest.visual_replay
+      - name: Upload replay evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf-strategy-visual-replay
+          path: visual_replay_results/
+          if-no-files-found: error
+          retention-days: 30

@@ -1,56 +1,68 @@
 import unittest
 
-from services.chart_detector import validate_zone_result
+from services.chart_detector import (
+    map_normalized_bbox_to_market, validate_zone_result,
+)
 
 
 BARS = [
-    {"time": f"2026-01-{i:02d} 00:00:00", "open": 100+i, "high": 102+i,
-     "low": 99+i, "close": 101+i}
+    {"time": f"2026-01-{i:02d} 00:00:00", "open": 60+i, "high": 65+i,
+     "low": 55+i, "close": 62+i}
     for i in range(1, 25)
 ]
+CAL = {
+    "image_width": 1000, "image_height": 1000,
+    "axes_left": 100, "axes_right": 900,
+    "axes_bottom": 100, "axes_top": 900,
+    "xlim": [-1, 24], "ylim": [0, 100],
+}
 
 
 class ChartDetectorTests(unittest.TestCase):
-    def test_clear_zone_with_real_timestamps_is_accepted(self):
+    def test_pixel_bbox_maps_to_calibrated_prices_and_times(self):
+        mapped = map_normalized_bbox_to_market([0.2, 0.3, 0.4, 0.4], CAL, BARS)
+        self.assertAlmostEqual(mapped["high"], 75.0)
+        self.assertAlmostEqual(mapped["low"], 62.5)
+        self.assertEqual(mapped["origin_start"], BARS[2]["time"])
+        self.assertEqual(mapped["origin_end"], BARS[8]["time"])
+
+    def test_clear_zone_is_accepted_after_calibration(self):
         result = validate_zone_result({"zones": [{
-            "direction": "DEMAND", "low": 105.0, "high": 108.0,
-            "origin_start": BARS[4]["time"], "origin_end": BARS[6]["time"],
+            "direction": "DEMAND", "bbox": [0.2, 0.3, 0.4, 0.4],
             "departure": "sharp", "boundary_status": "clear",
             "confidence": 0.88, "evidence": "Visible base and sharp departure"
-        }]}, BARS)
+        }]}, BARS, CAL)
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["direction"], "DEMAND")
+        self.assertAlmostEqual(result[0]["high"], 75.0)
 
     def test_unclear_zone_is_rejected_not_guessed(self):
         result = validate_zone_result({"zones": [{
-            "direction": "DEMAND", "low": 105.0, "high": 108.0,
-            "origin_start": BARS[4]["time"], "origin_end": BARS[6]["time"],
+            "direction": "DEMAND", "bbox": [0.2, 0.3, 0.4, 0.4],
             "departure": "sharp", "boundary_status": "unclear",
             "confidence": 0.99, "evidence": "Ambiguous edges"
-        }]}, BARS)
+        }]}, BARS, CAL)
         self.assertEqual(result, [])
 
-    def test_out_of_range_price_is_rejected(self):
-        result = validate_zone_result({"zones": [{
-            "direction": "SUPPLY", "low": 1.0, "high": 108.0,
-            "origin_start": BARS[4]["time"], "origin_end": BARS[6]["time"],
-            "departure": "diagonal", "boundary_status": "clear",
-            "confidence": 0.9, "evidence": "Visual evidence"
-        }]}, BARS)
-        self.assertEqual(result, [])
+    def test_zone_outside_plot_axes_is_rejected(self):
+        with self.assertRaises(ValueError):
+            map_normalized_bbox_to_market([0.01, 0.3, 0.4, 0.4], CAL, BARS)
+
+    def test_malformed_or_unordered_bbox_is_rejected(self):
+        with self.assertRaises(ValueError):
+            map_normalized_bbox_to_market([0.4, 0.3, 0.2, 0.4], CAL, BARS)
 
     def test_unknown_departure_is_not_scored(self):
         result = validate_zone_result({"zones": [{
-            "direction": "SUPPLY", "low": 110.0, "high": 113.0,
-            "origin_start": BARS[4]["time"], "origin_end": BARS[6]["time"],
+            "direction": "SUPPLY", "bbox": [0.2, 0.3, 0.4, 0.4],
             "departure": "uncertain", "boundary_status": "clear",
             "confidence": 0.9, "evidence": "Cannot classify"
-        }]}, BARS)
+        }]}, BARS, CAL)
         self.assertEqual(result, [])
 
     def test_invalid_schema_is_rejected(self):
         with self.assertRaises(ValueError):
-            validate_zone_result({"unexpected": []}, BARS)
+            validate_zone_result({"unexpected": []}, BARS, CAL)
 
 
 if __name__ == "__main__":

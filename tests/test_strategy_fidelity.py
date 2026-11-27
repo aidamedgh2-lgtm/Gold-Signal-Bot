@@ -30,8 +30,9 @@ class FidelityTests(unittest.TestCase):
         self.assertEqual(hierarchical_mtf_points(["MN1", "W1", "D1"]), 2)
         self.assertEqual(hierarchical_mtf_points(["W1", "D1", "H4"]), 2)
         self.assertEqual(hierarchical_mtf_points(["D1", "H4"]), 1)
+        self.assertEqual(hierarchical_mtf_points(["MN1", "D1"]), 1)
         self.assertEqual(hierarchical_mtf_points(["H4", "H1"]), 1)
-        self.assertEqual(hierarchical_mtf_points(["MN1", "D1", "H1"]), 0)
+        self.assertEqual(hierarchical_mtf_points(["MN1", "D1", "H1"]), 2)
 
     def test_contiguous_touches_are_one_visit(self):
         bars = [bar(20, 21), bar(9, 10), bar(9.5, 10.5), bar(20, 21),

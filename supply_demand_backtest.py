@@ -10,6 +10,8 @@ import datetime as dt
 import json
 import math
 import os
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -86,8 +88,27 @@ def fetch_history(interval, label, kind):
     })
     req = urllib.request.Request(
         live.API + "?" + params, headers={"User-Agent": "Gold-SD-Historical-Research/1.0"})
-    with urllib.request.urlopen(req, timeout=45) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+    # Twelve Data free tiers enforce request-rate limits. Retry 429 responses
+    # instead of aborting halfway through the six-timeframe download.
+    payload = None
+    for attempt in range(5):
+        try:
+            with urllib.request.urlopen(req, timeout=45) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as exc:
+            if exc.code != 429 or attempt == 4:
+                raise
+            retry_after = exc.headers.get("Retry-After")
+            try:
+                delay = max(5, int(retry_after)) if retry_after else 65
+            except (TypeError, ValueError):
+                delay = 65
+            print(f"{label}: Twelve Data rate limit (HTTP 429); retrying in {delay}s "
+                  f"({attempt + 1}/4)")
+            time.sleep(delay)
+    if payload is None:
+        raise RuntimeError(f"{label}: Twelve Data returned no payload after rate-limit retries.")
     if "values" not in payload:
         raise RuntimeError(f"{label}: {payload.get('message') or payload}")
     bars = []

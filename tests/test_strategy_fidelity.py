@@ -1,10 +1,30 @@
 import unittest
 
+from supply_demand_backtest import split_trades_by_time
 from strategy_fidelity import (
     zone_duration_points, count_zone_visits, visit_points,
     hierarchical_mtf_matches, mtf_points, opposing_zone_target, rr_from_zone,
     approach_shape_proxy,
 )
+
+
+class ChronologicalSplitTests(unittest.TestCase):
+    def test_split_uses_market_timestamp_not_trade_count(self):
+        trades = [
+            {"signal_time": "2026-01-02T10:00:00"},
+            {"signal_time": "2026-01-08T10:00:00"},
+            {"signal_time": "2026-01-25T10:00:00"},
+        ]
+        in_sample, out_of_sample = split_trades_by_time(trades, "2026-01-20T00:00:00")
+        self.assertEqual(len(in_sample), 2)
+        self.assertEqual(len(out_of_sample), 1)
+        self.assertEqual(out_of_sample[0]["signal_time"], "2026-01-25T10:00:00")
+
+    def test_empty_out_of_sample_is_not_fabricated(self):
+        trades = [{"signal_time": "2026-01-02T10:00:00"}]
+        in_sample, out_of_sample = split_trades_by_time(trades, "2026-01-20T00:00:00")
+        self.assertEqual(len(in_sample), 1)
+        self.assertEqual(out_of_sample, [])
 
 
 class StrategyFidelityTests(unittest.TestCase):

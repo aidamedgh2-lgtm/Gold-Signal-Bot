@@ -4,9 +4,7 @@ from math import isfinite
 from typing import Iterable, Mapping, Sequence
 
 VALID_TIMEFRAMES = ("MN1", "W1", "D1", "H4", "H1", "M15")
-HIERARCHICAL_PAIRS = tuple(zip(VALID_TIMEFRAMES, VALID_TIMEFRAMES[1:]))
-HIERARCHICAL_TRIPLETS = tuple(tuple(VALID_TIMEFRAMES[i:i + 3])
-                              for i in range(len(VALID_TIMEFRAMES) - 2))
+TIMEFRAME_ORDER = {tf: index for index, tf in enumerate(VALID_TIMEFRAMES)}
 
 
 def _finite_number(value: float, name: str) -> float:
@@ -54,9 +52,12 @@ def hierarchical_mtf_points(aligned_timeframes: Iterable[str]) -> int:
     unknown = aligned.difference(VALID_TIMEFRAMES)
     if unknown:
         raise ValueError(f"unknown timeframe(s): {sorted(unknown)}")
-    if any(set(chain).issubset(aligned) for chain in HIERARCHICAL_TRIPLETS):
+    # The PDF requires a top-down hierarchy, but examples allow skipping a
+    # timeframe when no suitable zone exists on it (e.g. MN1 then D1).
+    ordered = sorted(aligned, key=TIMEFRAME_ORDER.__getitem__)
+    if len(ordered) >= 3:
         return 2
-    if any(set(pair).issubset(aligned) for pair in HIERARCHICAL_PAIRS):
+    if len(ordered) == 2:
         return 1
     return 0
 

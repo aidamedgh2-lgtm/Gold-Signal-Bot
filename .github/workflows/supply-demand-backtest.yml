@@ -1,6 +1,14 @@
 name: Supply Demand historical backtest
 
 on:
+  push:
+    branches:
+      - research/supply-demand-backtest
+    paths:
+      - 'supply_demand_backtest.py'
+      - 'supply_demand_live.py'
+      - 'tests/**'
+      - '.github/workflows/supply-demand-backtest.yml'
   workflow_dispatch:
     inputs:
       outputsize:
@@ -57,8 +65,8 @@ jobs:
       - name: Run historical Supply Demand replay (no Telegram)
         env:
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
-          SD_BACKTEST_OUTPUTSIZE: ${{ inputs.outputsize }}
-          SD_BACKTEST_COST_R: ${{ inputs.cost_r }}
+          SD_BACKTEST_OUTPUTSIZE: ${{ inputs.outputsize || '5000' }}
+          SD_BACKTEST_COST_R: ${{ inputs.cost_r || '0.05' }}
         run: python supply_demand_backtest.py
 
       - name: Upload historical research report

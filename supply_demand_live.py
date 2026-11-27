@@ -195,6 +195,9 @@ def detect_zones(bars, tf):
 def apply_opposing_zone_rr(zone, all_zones):
     """Score RR to the nearest opposing zone; no historical-extrema substitute."""
     entry = (zone["low"] + zone["high"]) / 2
+    if "stop" not in zone:
+        zone.update({"target": None, "rr": 0.0, "rr_points": 0})
+        return zone
     stop = zone["stop"]
     risk = abs(entry - stop)
     if risk <= 0:

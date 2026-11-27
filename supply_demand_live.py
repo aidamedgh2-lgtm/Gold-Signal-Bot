@@ -11,6 +11,7 @@ from pathlib import Path
 
 from services.market_data import fetch_twelvedata_candles
 from services.telegram import send_telegram_message
+from services.vision_review import assess_candidate
 
 API = "https://api.twelvedata.com/time_series"
 SYMBOL = "XAU/USD"
@@ -29,6 +30,8 @@ STATE_FILE = Path("state.json")
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 API_KEY = os.environ.get("TWELVEDATA_API_KEY", "")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
+OPENAI_VISION_MODEL = os.environ.get("OPENAI_VISION_MODEL", "gpt-4.1-mini").strip()
 FINZDATA_API_KEY = os.environ.get("FINZDATA_API_KEY", "").strip()
 FINZDATA_CONTEXT_ENABLED = os.environ.get("FINZDATA_CONTEXT_ENABLED", "false").lower() == "true"
 
@@ -263,23 +266,37 @@ def main():
         print("لا توجد مناطق مرشحة.")
         return
 
-    # Fidelity gate: OHLC/ATR detection is only a candidate finder. The PDF's
-    # departure and approach classifications are visual; do not invent scores
-    # or emit trade alerts until those judgments are explicitly reviewed.
+    # AI vision reviews only chart-visible departure and approach geometry.
+    # It does not decide direction, levels, score, or whether a trade is valid.
     ranked = sorted(all_zones, key=lambda z: (z["tf"], z["created"]), reverse=True)
     review_lines = []
-    for zone in ranked[:5]:
-        review_lines.append(
-            f'{zone["tf"]} {zone["direction"]}: {zone["low"]:.2f}–{zone["high"]:.2f} '
-            f'(مرشح آلي فقط؛ قوة الانطلاق والاقتراب والتوافق والهدف تحتاج مراجعة)'
-        )
+    for zone in ranked[:3]:
+        label = f'{zone["tf"]} {zone["direction"]}: {zone["low"]:.2f}–{zone["high"]:.2f}'
+        if not OPENAI_API_KEY:
+            review_lines.append(label + " — AI غير مفعّل: OPENAI_API_KEY غير موجود.")
+            continue
+        try:
+            visual = assess_candidate(
+                data[zone["tf"]], zone, OPENAI_API_KEY, OPENAI_VISION_MODEL
+            )
+            confidence_pct = round(visual["confidence"] * 100)
+            review_lines.append(
+                label + f' — الانطلاق: {visual["departure"]}؛ '
+                f'الاقتراب: {visual["approach"]}؛ ثقة النموذج: {confidence_pct}%'
+                + f'؛ ملاحظة: {visual["evidence"]}'
+            )
+        except Exception as exc:
+            # Fail closed: an API/model/chart error must never create a score.
+            print(f'Vision review unavailable for {label}: {exc}')
+            review_lines.append(label + " — تعذر التقييم البصري؛ لا نقاط.")
     send(
-        "🔎 مرشحو مناطق العرض والطلب — XAU/USD\\n"
-        + "\\n".join(review_lines)
-        + "\\nلم تُحسب علامة /10 ولم تصدر صفقة: يلزم تثبيت التقييمات البصرية "
-          "ومستوى الهدف وفق الملف الأصلي أولاً."
+        "👁️ مراجعة بصرية بالذكاء الاصطناعي — XAU/USD\n"
+        + "\n".join(review_lines)
+        + "\nهذه نتائج تصنيف بصري أولي فقط. لم تُحسب علامة /10 ولم تصدر صفقة؛ "
+          "بقية معايير PDF (التوافق الهرمي، الزيارات، المدة، R:R والهدف) "
+          "ما زالت تحتاج ربطاً واختباراً حرفياً. لا يوجد تنفيذ أوامر."
     )
-    print("Candidates sent for fidelity review; automatic scoring and trade alerts are gated.")
+    print("Candidate chart vision review complete; trade scoring remains gated.")
     return
 
     comex_note = comex_daily_context()

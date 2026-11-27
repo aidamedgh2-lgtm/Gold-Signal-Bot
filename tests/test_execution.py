@@ -131,6 +131,7 @@ class ForwardPaperExecutionTests(unittest.TestCase):
 class LiveConfirmationTests(unittest.TestCase):
     def test_demand_bullish_engulfing_confirms(self):
         bars = [
+            candle("2026-11-27 11:45:00", 100, 101, 99, 100),
             candle("2026-11-27 12:00:00", 100.5, 100.8, 99.2, 99.5),
             candle("2026-11-27 12:15:00", 99.4, 100.8, 99.3, 100.6),
         ]
@@ -139,6 +140,7 @@ class LiveConfirmationTests(unittest.TestCase):
 
     def test_supply_bearish_engulfing_confirms(self):
         bars = [
+            candle("2026-11-27 11:45:00", 100, 101, 99, 100),
             candle("2026-11-27 12:00:00", 99.5, 100.8, 99.2, 100.5),
             candle("2026-11-27 12:15:00", 100.6, 100.7, 99.2, 99.4),
         ]
@@ -147,6 +149,7 @@ class LiveConfirmationTests(unittest.TestCase):
 
     def test_confirmation_rejected_when_neither_candle_touches_zone(self):
         bars = [
+            candle("2026-11-27 11:45:00", 100, 101, 99.5, 100),
             candle("2026-11-27 12:00:00", 100, 101, 99.5, 100.5),
             candle("2026-11-27 12:15:00", 100.5, 101.5, 100, 101),
         ]

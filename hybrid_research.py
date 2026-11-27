@@ -124,6 +124,12 @@ def replay(histories, cost_r, start_time, end_time):
             continue
         for name,state in variants.items():
             diag=state["diagnostics"]
+            # Shared counters are initialized for every variant before the
+            # variant-specific confirmation gates run.
+            for counter in ("m5_confirmations", "m1_mss_signals", "m1_confluence",
+                            "context_passes", "duplicate_zone_skips", "overlap_skips",
+                            "invalid_trade_skips"):
+                diag.setdefault(counter, 0)
             diag["setups"]+=len(candidates)
             for best in candidates:
                 direction="BUY" if best["direction"]=="DEMAND" else "SELL"

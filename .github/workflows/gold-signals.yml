@@ -191,6 +191,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FINZDATA_API_KEY: ${{ secrets.FINZDATA_API_KEY }}
+          FINZDATA_CONTEXT_ENABLED: "false"
         run: python supply_demand_live.py
 
       - name: Save duplicate-prevention state

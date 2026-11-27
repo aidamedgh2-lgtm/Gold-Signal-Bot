@@ -47,7 +47,7 @@ Never place secret values in source files, issues or chat messages.
 
 - **Gold signal checks**: scheduled live analysis; manual Telegram connectivity test; legacy historical backtest; optional COMEX data check.
 - **Check M1 and M5 data availability**: data access only, not strategy performance.
-- **Gold 90-day forward paper test**: virtual legacy ICT-proxy research only; no Telegram trade messages and no broker orders.
+- **Gold legacy ICT forward paper test**: virtual legacy ICT-proxy research only; no Telegram trade messages and no broker orders.
 - **Validate bot code**: compiles all Python scripts and runs offline regression tests.
 
 GitHub scheduled workflows are best-effort and may run late. They are not a real-time or 24/7 execution guarantee.

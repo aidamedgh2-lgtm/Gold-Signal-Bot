@@ -68,6 +68,23 @@ class SupplyDemandBacktestTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "conflicting duplicate timestamp"):
             bt.deduplicate_bars([first, second], "MN1")
 
+    def test_mtf_match_uses_other_zone_atr_for_distance_filter(self):
+        candidate = {
+            "low": 100.0, "high": 101.0, "atr": 10.0,
+            "direction": "DEMAND", "tf": "H4",
+            "move_points": 1, "rr_points": 1, "visit_points": 1,
+            "duration_points": 1, "arrival_points": 0, "move_atr": 1.5,
+        }
+        nearby_other = {
+            "low": 101.5, "high": 102.5, "atr": 0.1,
+            "direction": "DEMAND", "tf": "H1",
+            "move_points": 1, "rr_points": 1, "visit_points": 1,
+            "duration_points": 1, "arrival_points": 0, "move_atr": 1.5,
+        }
+        candidates = bt.score_candidates([candidate, nearby_other], price=100.0)
+        h4_candidate = next(item for item in candidates if item["tf"] == "H4")
+        self.assertEqual(h4_candidate["matches"], [])
+
     def test_profit_factor_undefined_without_losses(self):
         summary = bt.summarize([{"net_r": 1.5}])
         self.assertIsNone(summary["profit_factor"])

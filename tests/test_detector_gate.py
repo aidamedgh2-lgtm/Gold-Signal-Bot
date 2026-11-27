@@ -21,11 +21,12 @@ class DetectorSafetyGateTests(unittest.TestCase):
         node = next(n for n in self.tree.body
                     if isinstance(n, ast.FunctionDef) and n.name == "main")
         # The first executable statements must be the hard stop and return.
-        self.assertGreaterEqual(len(node.body), 2)
-        self.assertIsInstance(node.body[0], ast.Expr)
-        self.assertIsInstance(node.body[0].value, ast.Call)
-        self.assertEqual(getattr(node.body[0].value.func, "id", None), "print")
-        self.assertIsInstance(node.body[1], ast.Return)
+        self.assertGreaterEqual(len(node.body), 3)
+        self.assertIsInstance(node.body[0], ast.Assign)
+        self.assertIsInstance(node.body[1], ast.Expr)
+        self.assertIsInstance(node.body[1].value, ast.Call)
+        self.assertEqual(getattr(node.body[1].value.func, "id", None), "print")
+        self.assertIsInstance(node.body[2], ast.Return)
 
 
 if __name__ == "__main__":

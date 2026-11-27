@@ -36,7 +36,8 @@ class HybridResearchTests(unittest.TestCase):
         import supply_demand_backtest as bt
         start=bt.parse_time("2026-11-27 10:00:00")
         self.assertEqual(bt.candle_end(start,"1min").isoformat(),"2026-11-27T10:01:00+00:00")
-\n    def test_m5_alignment_requires_directional_close(self):
+
+    def test_m5_alignment_requires_directional_close(self):
         bars=[bar(99,101,98,100,0),bar(100,102,99,101,1),bar(101,103,100,102,2)]
         self.assertTrue(h.directional_m5_alignment(bars,"BUY"))
         self.assertFalse(h.directional_m5_alignment(bars,"SELL"))

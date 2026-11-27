@@ -34,6 +34,16 @@ def parse_time(value):
     return dt.datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(dt.timezone.utc)
 
 
+def valid_ohlc(bar):
+    """Return whether OHLC values form a finite, positive, internally consistent candle."""
+    values = [bar[field] for field in ("open", "high", "low", "close")]
+    return (
+        all(math.isfinite(value) and value > 0 for value in values)
+        and bar["high"] >= max(bar["open"], bar["close"], bar["low"])
+        and bar["low"] <= min(bar["open"], bar["close"], bar["high"])
+    )
+
+
 def candle_end(start, kind):
     if kind == "month":
         year = start.year + (1 if start.month == 12 else 0)
@@ -90,12 +100,7 @@ def fetch_history(interval, label, kind):
             for field in ("open", "high", "low", "close"):
                 bar[field] = float(item[field])
             values = [bar[field] for field in ("open", "high", "low", "close")]
-            valid = (
-                all(math.isfinite(value) and value > 0 for value in values)
-                and bar["high"] >= max(bar["open"], bar["close"], bar["low"])
-                and bar["low"] <= min(bar["open"], bar["close"], bar["high"])
-            )
-            if not valid:
+            if not valid_ohlc(bar):
                 invalid_rows.append(f"{stamp} OHLC={values}")
                 continue
             start = parse_time(stamp)

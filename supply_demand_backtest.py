@@ -119,6 +119,13 @@ def stats(trades):
     }
 
 
+def split_trades_by_time(trades, split_time):
+    """Split trades at a fixed market-data timestamp, never by trade count."""
+    in_sample = [trade for trade in trades if trade["signal_time"] < split_time]
+    out_of_sample = [trade for trade in trades if trade["signal_time"] >= split_time]
+    return in_sample, out_of_sample
+
+
 def main():
     OUTPUT.mkdir(exist_ok=True)
     data = {}
@@ -240,18 +247,20 @@ def main():
         used_zones.add(zone_id)
         next_free_index = exit_index + 1
 
-    split = int(len(trades) * 0.70)
+    split_time = m15[int(len(m15) * 0.70)]["time"]
+    in_sample, out_of_sample = split_trades_by_time(trades, split_time)
     summary = {
         "source": "Twelve Data XAU/USD spot OHLC; not HFM broker feed",
         "m15_bars": len(m15), "requested_bars_per_timeframe": OUTPUTSIZE,
         "window_start_utc": m15[0]["time"], "window_end_utc": m15[-1]["time"],
+        "chronological_split_time_utc": split_time,
         "entry_model": "next M15 candle open after closed confirmation",
         "exit_model": "opposing zone boundary; stop-first if stop and target hit in same candle",
         "max_holding_bars": MAX_HOLD_BARS, "cost_assumption_R_per_trade": COST_R,
         "visual_rules": "departure angle and approach shape remain OHLC proxies",
         "full_sample": stats(trades),
-        "in_sample_first_70pct": stats(trades[:split]),
-        "out_of_sample_last_30pct": stats(trades[split:]),
+        "in_sample_first_70pct_by_time": stats(in_sample),
+        "out_of_sample_last_30pct_by_time": stats(out_of_sample),
         "limitations": [
             "OHLC candles cannot reveal intrabar price path; stop-first is conservative.",
             "Spread, slippage, swaps and HFM-specific execution are not observed; cost is a configurable R proxy.",

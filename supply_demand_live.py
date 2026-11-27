@@ -56,6 +56,9 @@ def fetch(interval):
     bars = [{"time": x["datetime"], **{k: float(x[k]) for k in ("open","high","low","close")}}
             for x in payload["values"]]
     bars.sort(key=lambda x: x["time"])
+    timestamps = [bar["time"] for bar in bars]
+    if len(set(timestamps)) != len(timestamps):
+        raise RuntimeError(f"شموع مكررة في بيانات {interval}")
     # تجاهل الشمعة الأحدث لاحتمال عدم اكتمالها
     if len(bars) > 1:
         bars = bars[:-1]

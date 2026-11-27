@@ -111,24 +111,58 @@ jobs:
           )
           with urllib.request.urlopen(req, timeout=25) as response:
               data = json.loads(response.read().decode("utf-8"))
-          bars = data.get("bars") or []
-          if not bars:
+          all_bars = []
+          page_count = 0
+          next_cursor = None
+          while page_count < 10:
+              page_params = dict(params)
+              if next_cursor:
+                  page_params += "&" + urllib.parse.urlencode({"cursor": next_cursor})
+              page_req = urllib.request.Request(
+                  "https://api.goldprice.dev/v1/bars?" + page_params,
+                  headers={"Authorization": f"Bearer {key}", "User-Agent": "Gold-Signal-Bot/1.0"},
+              )
+              with urllib.request.urlopen(page_req, timeout=25) as page_response:
+                  page_data = json.loads(page_response.read().decode("utf-8"))
+              if page_count == 0:
+                  data = page_data
+              page_bars = page_data.get("bars") or []
+              all_bars.extend(page_bars)
+              page_count += 1
+              next_cursor = page_data.get("next_cursor")
+              print(f"Page {page_count}: {len(page_bars)} bars; has next cursor: {bool(next_cursor)}")
+              if not next_cursor:
+                  break
+
+          if not all_bars:
               raise SystemExit("API connected, but no COMEX daily bars were returned.")
-          latest = bars[0]
-          volume_rows = [b for b in bars if b.get("volume") not in (None, "")]
+          volume_rows = [b for b in all_bars if b.get("volume") not in (None, "")]
           print("GoldPrice.dev API: connection successful")
           print("Symbol:", data.get("symbol", "XAU-COMEX-MAIN"))
           print("Interval:", data.get("interval", "1d"))
-          print("Bars returned:", len(bars))
-          print("Latest bar:", latest.get("bar_start"))
-          print("Latest bar closed:", latest.get("is_closed"))
-          print("Bars with volume:", len(volume_rows))
-          print("Latest volume available:", latest.get("volume") is not None)
+          print("Pages checked:", page_count)
+          print("Bars returned across pages:", len(all_bars))
+          print("Source ID:", (data.get("meta") or {}).get("source_id", "not specified"))
           print("Delayed minutes:", data.get("delayed_minutes", "not specified"))
           print("Tier:", (data.get("meta") or {}).get("tier", "not specified"))
+          print("Bars with non-empty volume:", len(volume_rows))
+          print("Sample bars (newest first):")
+          for bar in all_bars[:10]:
+              print(json.dumps({
+                  "bar_start": bar.get("bar_start"),
+                  "is_closed": bar.get("is_closed"),
+                  "volume": bar.get("volume"),
+                  "open": bar.get("open"),
+                  "high": bar.get("high"),
+                  "low": bar.get("low"),
+                  "close": bar.get("close"),
+              }, ensure_ascii=False))
           if not volume_rows:
-              raise SystemExit("Bars were returned, but none contained volume; do not use as volume confirmation.")
-          print("DATA CHECK PASSED: real futures-bar volume field is present; not yet integrated into signals.")
+              raise SystemExit(
+                  "No volume found after cursor pagination. This is a data-availability result, "
+                  "not proof of an API-key or authentication failure."
+              )
+          print("DATA CHECK PASSED: futures volume field is present; not yet integrated into signals.")
           PY
 
       - name: Validate Python syntax

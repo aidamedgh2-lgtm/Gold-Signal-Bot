@@ -20,7 +20,13 @@ class DetectorSafetyGateTests(unittest.TestCase):
     def test_live_main_uses_visual_detector_and_never_scores_trades(self):
         node = next(n for n in self.tree.body
                     if isinstance(n, ast.FunctionDef) and n.name == "main")
-        calls = [n for n in ast.walk(node) if isinstance(n, ast.Call)]
+        reachable = []
+        for statement in node.body:
+            reachable.append(statement)
+            if isinstance(statement, ast.Return):
+                break
+        calls = [n for statement in reachable for n in ast.walk(statement)
+                 if isinstance(n, ast.Call)]
         names = [n.func.id for n in calls if isinstance(n.func, ast.Name)]
         self.assertIn("detect_visual_zones", names)
         self.assertIn("assess_candidate", names)

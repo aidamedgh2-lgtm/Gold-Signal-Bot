@@ -3,6 +3,7 @@ All visual concepts are explicit OHLC/ATR proxies; no broker execution.
 """
 import json
 import math
+import datetime as dt
 import os
 import urllib.parse
 import urllib.request
@@ -25,6 +26,7 @@ STATE_FILE = Path("state.json")
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 API_KEY = os.environ["TWELVEDATA_API_KEY"]
+FINZDATA_API_KEY = os.environ.get("FINZDATA_API_KEY", "").strip()
 
 
 def send(text):
@@ -199,6 +201,70 @@ def confirmation(bars, zone):
     return "Engulfing" if engulf else ("Strong Candle Close" if strong else None)
 
 
+
+def comex_daily_context():
+    """Non-directional COMEX participation context; never changes signal scoring."""
+    if not FINZDATA_API_KEY:
+        return "COMEX: بيانات الحجم اليومي غير مفعّلة (مفتاح FinzData غير موجود)."
+    today = dt.datetime.now(dt.timezone.utc).date()
+    start = today - dt.timedelta(days=30)
+    params = urllib.parse.urlencode({
+        "root": "GC", "continuous": "true",
+        "start": start.isoformat(), "end": today.isoformat()
+    })
+    req = urllib.request.Request(
+        "https://api.finzdata.com/v1/futures/daily?" + params,
+        headers={"X-API-Key": FINZDATA_API_KEY, "Accept": "application/json",
+                 "User-Agent": "Gold-SD-Bot/1.0"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        rows = payload.get("data", []) if isinstance(payload, dict) else payload
+        if not isinstance(rows, list):
+            return "COMEX: تعذر قراءة بنية البيانات اليومية."
+        valid = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            try:
+                day = dt.date.fromisoformat(str(row.get("date", ""))[:10])
+                volume = float(row.get("volume"))
+                if math.isfinite(volume) and volume > 0:
+                    valid.append((day, volume, row.get("open_interest")))
+            except (TypeError, ValueError):
+                continue
+        valid.sort(key=lambda item: item[0])
+        if len(valid) < 6:
+            return f"COMEX: بيانات حجم غير كافية ({len(valid)} جلسات صالحة)."
+        latest_day, latest_volume, latest_oi = valid[-1]
+        age = (today - latest_day).days
+        if age > 4:
+            return f"COMEX: آخر بيانات حجم تعود إلى {latest_day.isoformat()}؛ قديمة، ولا تستخدم للتأكيد."
+        prior = valid[-21:-1]
+        if not prior:
+            return "COMEX: لا توجد جلسات سابقة كافية للمقارنة."
+        avg_volume = sum(x[1] for x in prior) / len(prior)
+        ratio = latest_volume / avg_volume if avg_volume > 0 else 0
+        volume_state = ("أعلى من متوسط 20 جلسة" if ratio >= 1.15 else
+                        ("أقل من متوسط 20 جلسة" if ratio <= 0.85 else
+                         "قريب من متوسط 20 جلسة"))
+        oi_text = "Open Interest غير متاح"
+        try:
+            if latest_oi not in (None, "") and prior[-1][2] not in (None, ""):
+                oi_change = float(latest_oi) - float(prior[-1][2])
+                oi_pct = (oi_change / float(prior[-1][2]) * 100
+                          if float(prior[-1][2]) else 0)
+                oi_text = f"Open Interest {'ارتفع' if oi_change > 0 else ('انخفض' if oi_change < 0 else 'لم يتغير')} ({oi_pct:+.2f}%)"
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+        return (f"COMEX GC اليومي ({latest_day.isoformat()}): Volume {latest_volume:,.0f} "
+                f"({volume_state}؛ {ratio:.2f}x)، {oi_text}. "
+                "معلومة سياقية غير اتجاهية وليست إشارة BUY/SELL.")
+    except Exception as exc:
+        print(f"FinzData context unavailable: {exc}")
+        return "COMEX: تعذر جلب البيانات الآن؛ التحليل الفني مستمر دون هذا العامل."
+
 def main():
     data = {}
     # كل فريم مستقل في جلب البيانات؛ تعذر أي فريم يعني عدم إصدار إشارة ناقصة.
@@ -215,6 +281,8 @@ def main():
         print("لا توجد مناطق عرض/طلب مستوفية لتعريف الحركة.")
         return
 
+    comex_note = comex_daily_context()
+    print(comex_note)
     m15 = data["M15"]
     price = m15[-1]["close"]
     candidates = []
@@ -267,7 +335,7 @@ def main():
         if seen.get(zone_id) != "monitor":
             send(f'👁️ مراقبة منطقة {best["direction"]} — XAU/USD\nالفريم: {best["tf"]}\n'
                  f'المنطقة: {best["low"]:.2f} – {best["high"]:.2f}\nالتقييم: {best["score"]}/10\n'
-                 + score_lines + 'لا توجد صفقة. ننتظر تحسن المنطقة/تأكيد الدخول.')
+                 + score_lines + 'لا توجد صفقة. ننتظر تحسن المنطقة/تأكيد الدخول.\n' + comex_note)
             seen[zone_id] = "monitor"
     else:
         confirm = confirmation(m15, best)
@@ -291,13 +359,13 @@ def main():
                      + score_lines +
                      f'Entry: {entry:.2f}\nSL: {stop:.2f}\nTP1: {tp1:.2f}\n'
                      f'TP2: {tp2:.2f}\nTP3: {tp3:.2f}\n'
-                     'الدخول بعد إغلاق شمعة التأكيد؛ هذه إشارة تنبيه وليست أمراً منفذاً.')
+                     + comex_note + '\nالدخول بعد إغلاق شمعة التأكيد؛ هذه إشارة تنبيه وليست أمراً منفذاً.')
                 seen[zone_id] = "signal"
                 state["last_signal_key"] = signal_key
         elif seen.get(zone_id) not in ("strong_wait", "signal"):
             send(f'⭐ منطقة قوية — XAU/USD\nالفريم: {best["tf"]}\n'
                  f'المنطقة: {best["low"]:.2f} – {best["high"]:.2f}\nالتقييم: {best["score"]}/10\n'
-                 + score_lines + 'انتظار وصول السعر إلى المنطقة ثم شمعة تأكيد M15. لا دخول الآن.')
+                 + score_lines + 'انتظار وصول السعر إلى المنطقة ثم شمعة تأكيد M15. لا دخول الآن.\n' + comex_note)
             seen[zone_id] = "strong_wait"
     state["sd_seen"] = seen
     STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")

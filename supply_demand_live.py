@@ -9,6 +9,9 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from services.market_data import fetch_twelvedata_candles
+from services.telegram import send_telegram_message
+
 API = "https://api.twelvedata.com/time_series"
 SYMBOL = "XAU/USD"
 # إعدادات قابلة للتعديل
@@ -31,42 +34,11 @@ FINZDATA_CONTEXT_ENABLED = os.environ.get("FINZDATA_CONTEXT_ENABLED", "false").l
 
 
 def send(text):
-    if not BOT_TOKEN or not CHAT_ID:
-        raise RuntimeError("Telegram credentials are required to send a message")
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    body = urllib.parse.urlencode({"chat_id": CHAT_ID, "text": text,
-                                   "disable_web_page_preview": "true"}).encode()
-    req = urllib.request.Request(url, data=body, method="POST")
-    with urllib.request.urlopen(req, timeout=25) as response:
-        result = json.loads(response.read().decode())
-    if not result.get("ok"):
-        raise RuntimeError("Telegram rejected message")
+    send_telegram_message(text, BOT_TOKEN, CHAT_ID)
 
 
 def fetch(interval):
-    if not API_KEY:
-        raise RuntimeError("TWELVEDATA_API_KEY is missing")
-    params = urllib.parse.urlencode({"symbol": SYMBOL, "interval": interval,
-        "outputsize": OUTPUTSIZE, "timezone": "UTC", "apikey": API_KEY, "format": "JSON"})
-    req = urllib.request.Request(API + "?" + params, headers={"User-Agent": "Gold-SD-Bot/1.0"})
-    with urllib.request.urlopen(req, timeout=25) as response:
-        payload = json.loads(response.read().decode())
-    if "values" not in payload:
-        raise RuntimeError(str(payload.get("message") or payload.get("code") or payload))
-    bars = [{"time": x["datetime"], **{k: float(x[k]) for k in ("open","high","low","close")}}
-            for x in payload["values"]]
-    bars.sort(key=lambda x: x["time"])
-    # تجاهل الشمعة الأحدث لاحتمال عدم اكتمالها
-    if len(bars) > 1:
-        bars = bars[:-1]
-    if len(bars) < 35:
-        raise RuntimeError(f"بيانات غير كافية: {interval} ({len(bars)} شمعة)")
-    for b in bars:
-        if not all(math.isfinite(b[k]) for k in ("open","high","low","close")):
-            raise RuntimeError("قيمة OHLC غير صالحة")
-        if b["high"] < max(b["open"],b["close"],b["low"]) or b["low"] > min(b["open"],b["close"],b["high"]):
-            raise RuntimeError("ترتيب OHLC غير صالح")
-    return bars
+    return fetch_twelvedata_candles(interval, API_KEY, SYMBOL, OUTPUTSIZE)
 
 
 def atr(bars, period=14):

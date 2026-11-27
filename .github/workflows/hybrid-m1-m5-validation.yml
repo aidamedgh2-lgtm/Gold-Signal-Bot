@@ -9,6 +9,7 @@ on:
       - 'hybrid_research.py'
       - 'hybrid_context.py'
       - 'tests/test_hybrid_context.py'
+      - 'tests/test_strategy_scoring.py'
       - 'tests/test_hybrid_research.py'
       - 'supply_demand_live.py'
       - 'supply_demand_backtest.py'

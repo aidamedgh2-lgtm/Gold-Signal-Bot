@@ -260,8 +260,27 @@ def main():
     for _, label in TIMEFRAMES:
         all_zones.extend(detect_zones(data[label], label))
     if not all_zones:
-        print("لا توجد مناطق عرض/طلب مستوفية لتعريف الحركة.")
+        print("لا توجد مناطق مرشحة.")
         return
+
+    # Fidelity gate: OHLC/ATR detection is only a candidate finder. The PDF's
+    # departure and approach classifications are visual; do not invent scores
+    # or emit trade alerts until those judgments are explicitly reviewed.
+    ranked = sorted(all_zones, key=lambda z: (z["tf"], z["created"]), reverse=True)
+    review_lines = []
+    for zone in ranked[:5]:
+        review_lines.append(
+            f'{zone["tf"]} {zone["direction"]}: {zone["low"]:.2f}–{zone["high"]:.2f} '
+            f'(مرشح آلي فقط؛ قوة الانطلاق والاقتراب والتوافق والهدف تحتاج مراجعة)'
+        )
+    send(
+        "🔎 مرشحو مناطق العرض والطلب — XAU/USD\\n"
+        + "\\n".join(review_lines)
+        + "\\nلم تُحسب علامة /10 ولم تصدر صفقة: يلزم تثبيت التقييمات البصرية "
+          "ومستوى الهدف وفق الملف الأصلي أولاً."
+    )
+    print("Candidates sent for fidelity review; automatic scoring and trade alerts are gated.")
+    return
 
     comex_note = comex_daily_context()
     print(comex_note)

@@ -8,7 +8,7 @@ Source: user's original 143-page PDF, «المضغوط (1).pdf». See [STRATEGY_
 |---|---:|---|
 | Departure shape | 2 | Horizontal/sideways 0; smooth diagonal about 45° = 1; steep/near-vertical about 70–90° = 2 |
 | Reward/risk | 2 | Stop beyond departure zone; target at opposing destination reached in prior move. 3:1=2, 2:1=1, 1:1=0 |
-| Big picture / MTF | 2 | Start at largest frame and compare same approximate zone on successive smaller frames. 3+ hierarchical matches=2; 2=1; 1=0 |
+| Big picture / MTF | 2 | Start at largest frame and compare same approximate zone on successive smaller frames. 3+ ordered hierarchical matches=2; 2=1; 1=0 |
 | Zone visits | 2 | Fresh/unvisited or first return=2; second return=1; third or later=0 |
 | Time inside/touching zone | 1 | Count touching/inside candles on D1 and H4; <=4=1; >=5=0 |
 | Approach shape | 1 | Fast/rocket-like return=1; diagonal or sideways=0 |
@@ -21,6 +21,7 @@ Source: user's original 143-page PDF, «المضغوط (1).pdf». See [STRATEGY_
 
 ## Fidelity constraints
 - Departure and approach are separate visual judgments.
+- The PDF's final approach examples mention a path resembling 7 or 8; its exact geometry is not formally defined, so AI must use uncertainty rather than inventing a numeric rule.
 - Consecutive candles in one continuous touch are one visit.
 - Fresh/unvisited and first return receive 2 visit points.
 - Duration counts zone-touching candles, not base-formation candles.

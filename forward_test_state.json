@@ -4,11 +4,19 @@
   "strategy_version": "live-ict-proxy-v1__fib-classic-v1__next-open__2R__48bars",
   "feed": "XAU/USD Spot - Twelve Data",
   "timeframe": "M15",
-  "last_processed_candle": "2026-11-27 10:45:00",
-  "processed_candles": 63,
+  "last_processed_candle": "2026-11-27 19:30:00",
+  "processed_candles": 98,
   "books": {
     "ICT": {
-      "active": null,
+      "active": {
+        "signal_time": "2026-11-27 18:45:00",
+        "entry_time": "2026-11-27 19:00:00",
+        "entry_index": 256,
+        "entry": 3642.08179,
+        "direction": "BUY",
+        "stop": 3621.8953465904274,
+        "risk": 20.186443409572803
+      },
       "trades": []
     },
     "ICT + Fibonacci Classic": {

@@ -50,7 +50,7 @@ def fetch(interval, label):
         raise RuntimeError("TWELVEDATA_API_KEY is missing in GitHub Actions secrets.")
     params = urllib.parse.urlencode({
         "symbol": "XAU/USD", "interval": interval, "outputsize": OUTPUTSIZE,
-        "timezone": "UTC", "order": "asc", "apikey": KEY, "format": "JSON",
+        "timezone": "UTC", "order": "desc", "apikey": KEY, "format": "JSON",
     })
     request = urllib.request.Request(API + "?" + params,
         headers={"User-Agent": "Gold-SD-Causal-Backtest/1.0"})

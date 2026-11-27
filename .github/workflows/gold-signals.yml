@@ -190,6 +190,7 @@ jobs:
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FINZDATA_API_KEY: ${{ secrets.FINZDATA_API_KEY }}
         run: python supply_demand_live.py
 
       - name: Save duplicate-prevention state

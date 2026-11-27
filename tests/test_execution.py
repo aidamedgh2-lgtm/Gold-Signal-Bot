@@ -128,6 +128,28 @@ class ForwardPaperExecutionTests(unittest.TestCase):
             self.assertIsNone(book["active"])
 
 
+class SupplyDemandScoringTests(unittest.TestCase):
+    def test_one_candle_base_gets_no_duration_point(self):
+        self.assertEqual(supply_demand_live.base_duration_points(1), 0)
+
+    def test_two_to_four_candle_base_gets_one_duration_point(self):
+        for count in (2, 3, 4):
+            with self.subTest(count=count):
+                self.assertEqual(supply_demand_live.base_duration_points(count), 1)
+
+    def test_departure_window_uses_exactly_five_bars(self):
+        bars = [candle(f"2026-11-27 12:{i:02d}:00", 100, 101, 99, 100)
+                for i in range(7)]
+        window = supply_demand_live.departure_window(bars, 1, 5)
+        self.assertEqual(len(window), 5)
+        self.assertEqual(window, bars[1:6])
+
+    def test_incomplete_departure_window_is_rejected(self):
+        bars = [candle(f"2026-11-27 12:{i:02d}:00", 100, 101, 99, 100)
+                for i in range(5)]
+        self.assertIsNone(supply_demand_live.departure_window(bars, 1, 5))
+
+
 class LiveConfirmationTests(unittest.TestCase):
     def test_demand_bullish_engulfing_confirms(self):
         bars = [

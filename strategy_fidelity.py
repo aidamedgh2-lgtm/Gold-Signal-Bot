@@ -85,14 +85,16 @@ def approach_shape_proxy(bars, zone, lookback=5):
     """Conservative OHLC proxy for a clean approach; not a visual-angle measurement."""
     if len(bars) < lookback + 1:
         return False
+    if not bar_touches_zone(bars[-1], zone):
+        return False
     sample = bars[-(lookback + 1):-1]
     closes = [b["close"] for b in sample]
     if zone["direction"] == "DEMAND":
         progress = closes[0] - closes[-1]
-        retracements = sum(max(0.0, closes[i] - closes[i + 1])
+        retracements = sum(max(0.0, closes[i + 1] - closes[i])
                            for i in range(len(closes) - 1))
         return progress > 0 and retracements <= progress * 0.60
     progress = closes[-1] - closes[0]
-    retracements = sum(max(0.0, closes[i + 1] - closes[i])
+    retracements = sum(max(0.0, closes[i] - closes[i + 1])
                        for i in range(len(closes) - 1))
     return progress > 0 and retracements <= progress * 0.60

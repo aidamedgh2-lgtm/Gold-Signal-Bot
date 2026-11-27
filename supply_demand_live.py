@@ -228,7 +228,7 @@ def main():
             continue
         matches = [x for x in all_zones if x is not z and x["direction"] == z["direction"]
                    and x["tf"] != z["tf"] and overlaps(z,x)]
-        match_count = len({x["tf"] for x in matches})
+        match_count = 1 + len({x["tf"] for x in matches})
         mtf_points = 2 if match_count >= 3 else (1 if match_count == 2 else 0)
         z["matches"] = sorted({x["tf"] for x in matches}, key=lambda t: tf_order.index(t))
         z["mtf_points"] = mtf_points
@@ -265,7 +265,7 @@ def main():
                  + score_lines + 'لا توجد صفقة. ننتظر تحسن المنطقة/تأكيد الدخول.')
             seen[zone_id] = "monitor"
     else:
-        confirm = confirmation(m15, best) if best["tf"] == "M15" else None
+        confirm = confirmation(m15, best)
         # شمعة التأكيد M15 مطلوبة بعد أن يلمس السعر المنطقة.
         if confirm:
             entry = m15[-1]["close"]

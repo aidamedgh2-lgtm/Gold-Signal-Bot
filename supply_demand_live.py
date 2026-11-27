@@ -9,6 +9,10 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from strategy_fidelity import (zone_duration_points, count_zone_visits, visit_points,
+    hierarchical_mtf_matches, mtf_points, opposing_zone_target, rr_from_zone,
+    approach_shape_proxy)
+
 API = "https://api.twelvedata.com/time_series"
 SYMBOL = "XAU/USD"
 # إعدادات قابلة للتعديل
@@ -126,44 +130,24 @@ def detect_zones(bars, tf):
             if zhi <= zlo:
                 continue
             departure_end = min(end + 5, len(bars)-1)
-            visits = 0
-            was_inside = False
-            for x in bars[departure_end+1:]:
-                inside = x["low"] <= zhi and x["high"] >= zlo
-                if inside and not was_inside:
-                    visits += 1
-                was_inside = inside
-            visit_points = 2 if visits == 0 else (1 if visits == 1 else 0)
-            duration_points = 1 if count <= 4 else 0
-            # سرعة الاقتراب: انتقال لا يقل عن 1 ATR خلال ثلاث شمعات قبل لمس المنطقة
+            zone_ref = {"low": zlo, "high": zhi, "direction": direction}
+            visits = count_zone_visits(bars, zone_ref, departure_end)
+            visit_score = visit_points(visits)
+            duration_score, touched_candles = zone_duration_points(bars, zone_ref, departure_end)
+            # هذا تقدير حسابي لشكل الاقتراب، وليس قياساً بصرياً لزاوية الرسم.
+            arrival_points = 1 if approach_shape_proxy(
+                bars, zone_ref, lookback=5) else 0
             last = bars[-1]
-            recent = bars[-4:-1]
-            if len(recent) == 3:
-                prior_close = recent[0]["close"]
-                touched = last["low"] <= zhi and last["high"] >= zlo
-                fast_approach = ((direction == "DEMAND" and prior_close-zhi >= a and
-                                  last["close"] > last["open"] and touched) or
-                                 (direction == "SUPPLY" and zlo-prior_close >= a and
-                                  last["close"] < last["open"] and touched))
-            else:
-                fast_approach = False
-            arrival_points = 1 if fast_approach else 0
-            # الهدف المرجعي: قمة/قاع آخر 100 شمعة في الاتجاه المقابل
-            look = bars[max(0, end-100):end]
             stop = zlo - STOP_BUFFER_ATR*a if direction == "DEMAND" else zhi + STOP_BUFFER_ATR*a
-            entry_ref = (zlo+zhi)/2
-            risk = abs(entry_ref-stop)
-            target = (max(x["high"] for x in look) if direction == "DEMAND"
-                      else min(x["low"] for x in look)) if look else entry_ref
-            reward = (target-entry_ref if direction == "DEMAND" else entry_ref-target)
-            rr = reward/risk if risk > 0 else 0
-            rr_points = 2 if rr >= 3 else (1 if rr >= 2 else 0)
+            rr, rr_points = 0.0, 0
+            target = None
             zones.append({"tf":tf,"direction":direction,"low":zlo,"high":zhi,
                 "atr":a,"stop":stop,"rr":rr,"rr_points":rr_points,
                 "move_points":move_points,"move_type":move_type,
-                "visit_points":visit_points,"visits":visits,
-                "duration_points":duration_points,"base_bars":count,
-                "arrival_points":arrival_points,"move_atr":move_atr,
+                "visit_points":visit_score,"visits":visits,
+                "duration_points":duration_score,"duration_candles":touched_candles,
+                "base_bars":count,"arrival_points":arrival_points,
+                "target":target,"move_atr":move_atr,
                 "created":bars[s]["time"],"last":last["close"]})
             # منع إضافة القاعدة نفسها بأطوال مختلفة
             break
@@ -306,16 +290,16 @@ def main():
             continue
         if z["direction"] == "SUPPLY" and price > z["high"]+0.15*z["atr"]:
             continue
-        matches = [x for x in all_zones if x is not z and x["direction"] == z["direction"]
-                   and x["tf"] != z["tf"] and overlaps(z,x)
-                   and max(x["low"]-price, 0, price-x["high"]) <= MAX_NEAR_ATR*x["atr"]
-                   and not ((x["direction"] == "DEMAND" and price < x["low"]-0.15*x["atr"]) or
-                            (x["direction"] == "SUPPLY" and price > x["high"]+0.15*x["atr"]))]
-        match_count = 1 + len({x["tf"] for x in matches})
-        mtf_points = 2 if match_count >= 3 else (1 if match_count == 2 else 0)
-        z["matches"] = sorted({x["tf"] for x in matches}, key=lambda t: tf_order.index(t))
-        z["mtf_points"] = mtf_points
-        z["score"] = (z["move_points"] + z["rr_points"] + mtf_points +
+        eligible_mtf = [x for x in all_zones if x is not z
+                        and max(x["low"]-price, 0, price-x["high"]) <= MAX_NEAR_ATR*x["atr"]
+                        and not ((x["direction"] == "DEMAND" and price < x["low"]-0.15*x["atr"]) or
+                                 (x["direction"] == "SUPPLY" and price > x["high"]+0.15*x["atr"]))]
+        matches = hierarchical_mtf_matches(z, eligible_mtf)
+        z["matches"] = matches
+        z["mtf_points"] = mtf_points(matches)
+        z["target"] = opposing_zone_target(z, all_zones)
+        z["rr"], z["rr_points"] = rr_from_zone(z, z["target"], z["stop"])
+        z["score"] = (z["move_points"] + z["rr_points"] + z["mtf_points"] +
                       z["visit_points"] + z["duration_points"] + z["arrival_points"])
         candidates.append(z)
     if not candidates:
@@ -336,8 +320,8 @@ def main():
         f'R:R: {best["rr_points"]}/2 (تقريباً 1:{best["rr"]:.2f})\n'
         f'توافق الفريمات: {best["mtf_points"]}/2 ({", ".join(best["matches"]) or "لا يوجد"})\n'
         f'الزيارات: {best["visit_points"]}/2 (عدد الزيارات: {best["visits"]})\n'
-        f'مدة القاعدة: {best["duration_points"]}/1 ({best["base_bars"]} شمعة)\n'
-        f'الوصول: {best["arrival_points"]}/1\n')
+        f'مدة لمس المنطقة: {best["duration_points"]}/1 ({best["duration_candles"]} شمعة ملامسة)\n'
+        f'شكل الاقتراب (تقدير OHLC): {best["arrival_points"]}/1\n')
     if best["score"] < 7:
         print(f'أفضل منطقة {best["score"]}/10؛ أقل من حد المراقبة.')
         return
@@ -357,9 +341,10 @@ def main():
             if risk <= 0:
                 print("مخاطرة غير صالحة؛ لا إشارة.")
                 return
-            tp1 = entry + (1.5*risk if best["direction"] == "DEMAND" else -1.5*risk)
-            tp2 = entry + (2.5*risk if best["direction"] == "DEMAND" else -2.5*risk)
-            tp3 = entry + (3.0*risk if best["direction"] == "DEMAND" else -3.0*risk)
+            tp1 = best.get("target")
+            if tp1 is None:
+                print("لا توجد منطقة مقابلة لتحديد الهدف؛ لا إشارة.")
+                return
             direction = "BUY" if best["direction"] == "DEMAND" else "SELL"
             signal_key = zone_id + ":" + m15[-1]["time"]
             if seen.get(zone_id) != "signal" and state.get("last_signal_key") != signal_key:
@@ -368,7 +353,7 @@ def main():
                      f'شمعة التأكيد: {confirm} على M15\nالتقييم: {best["score"]}/10\n'
                      + score_lines +
                      f'Entry: {entry:.2f}\nSL: {stop:.2f}\nTP1: {tp1:.2f}\n'
-                     f'TP2: {tp2:.2f}\nTP3: {tp3:.2f}\n'
+                     f'Target (المنطقة المقابلة): {tp1:.2f}\n'
                      + comex_note + '\nالدخول بعد إغلاق شمعة التأكيد؛ هذه إشارة تنبيه وليست أمراً منفذاً.')
                 seen[zone_id] = "signal"
                 state["last_signal_key"] = signal_key

@@ -1,0 +1,33 @@
+name: Original strategy fidelity tests
+
+on:
+  push:
+    branches:
+      - repair/original-strategy-fidelity-v1
+    paths:
+      - "strategy_fidelity.py"
+      - "supply_demand_live.py"
+      - "supply_demand_backtest.py"
+      - "tests/test_strategy_fidelity.py"
+      - ".github/workflows/strategy-fidelity-tests.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "strategy_fidelity.py"
+      - "supply_demand_live.py"
+      - "tests/test_strategy_fidelity.py"
+      - ".github/workflows/strategy-fidelity-tests.yml"
+
+jobs:
+  fidelity-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run focused fidelity tests
+        run: |
+          python -m py_compile supply_demand_backtest.py supply_demand_live.py strategy_fidelity.py
+          python -m unittest discover -s tests -p "test_strategy_fidelity.py" -v

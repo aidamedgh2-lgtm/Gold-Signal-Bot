@@ -92,6 +92,7 @@ def fetch_history(interval, label, kind):
         raise RuntimeError(f"{label}: {payload.get('message') or payload}")
     bars = []
     invalid_rows = []
+    invalid_stamps = []
     raw_values = payload["values"]
     for item in raw_values:
         stamp = str(item.get("datetime", "<missing timestamp>"))
@@ -102,6 +103,7 @@ def fetch_history(interval, label, kind):
             values = [bar[field] for field in ("open", "high", "low", "close")]
             if not valid_ohlc(bar):
                 invalid_rows.append(f"{stamp} OHLC={values}")
+                invalid_stamps.append(stamp)
                 continue
             start = parse_time(stamp)
             bar["_start"] = start
@@ -109,18 +111,21 @@ def fetch_history(interval, label, kind):
             bars.append(bar)
         except (KeyError, TypeError, ValueError, OverflowError) as exc:
             invalid_rows.append(f"{stamp} ({type(exc).__name__}: {exc})")
+            invalid_stamps.append(stamp)
 
-    # Some long-range provider responses contain isolated malformed legacy rows.
-    # Skip a very small number, but fail closed if data quality is broadly poor.
-    max_invalid = max(2, math.ceil(len(raw_values) * 0.001))
-    if len(invalid_rows) > max_invalid:
+    # Historical provider data may contain a block of malformed legacy candles.
+    # Exclude those rows, but stop if more than 20% of the requested history is bad.
+    invalid_fraction = len(invalid_rows) / max(1, len(raw_values))
+    max_invalid_fraction = 0.20
+    if invalid_fraction > max_invalid_fraction:
         sample = "; ".join(invalid_rows[:5])
         raise RuntimeError(
             f"{label}: rejected {len(invalid_rows)}/{len(raw_values)} invalid OHLC rows "
-            f"(limit {max_invalid}); examples: {sample}"
+            f"(limit {max_invalid_fraction:.0%}); examples: {sample}"
         )
     if invalid_rows:
-        print(f"{label}: skipped {len(invalid_rows)} invalid provider OHLC row(s): "
+        print(f"{label}: skipped {len(invalid_rows)}/{len(raw_values)} invalid provider "
+              f"OHLC row(s) ({invalid_fraction:.1%}); "
               + "; ".join(invalid_rows[:3]))
     bars, duplicate_count = deduplicate_bars(bars, label)
     if duplicate_count:
@@ -130,7 +135,17 @@ def fetch_history(interval, label, kind):
     bars = [b for b in bars if b["_end"] <= now]
     if len(bars) < 35:
         raise RuntimeError(f"{label}: only {len(bars)} fully closed candles; need >=35.")
-    return bars
+    quality = {
+        "raw_rows": len(raw_values),
+        "invalid_rows_excluded": len(invalid_rows),
+        "invalid_fraction_pct": round(100 * invalid_fraction, 3),
+        "invalid_date_range": (
+            [min(invalid_stamps), max(invalid_stamps)] if invalid_stamps else None
+        ),
+        "exact_duplicate_rows_removed": duplicate_count,
+        "usable_closed_bars": len(bars),
+    }
+    return bars, quality
 
 
 def strip_internal(bars):
@@ -253,8 +268,9 @@ def summarize(trades):
 
 def run():
     histories = {}
+    data_quality = {}
     for interval, label, kind in TIMEFRAMES:
-        histories[label] = fetch_history(interval, label, kind)
+        histories[label], data_quality[label] = fetch_history(interval, label, kind)
         print(f"{label}: {len(histories[label])} fully closed bars "
               f"({histories[label][0]['time']} .. {histories[label][-1]['time']})")
     m15 = histories["M15"]
@@ -336,6 +352,7 @@ def run():
                                "first": histories[label][0]["time"],
                                "last": histories[label][-1]["time"]}
                        for label in TF_ORDER},
+        "data_quality": data_quality,
         "all_trades": summarize(trades),
         "chronological_first_70pct": summarize(trades[:split]),
         "chronological_last_30pct_out_of_sample": summarize(trades[split:]),

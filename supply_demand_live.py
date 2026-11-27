@@ -23,13 +23,16 @@ MAX_NEAR_ATR = 1.5
 STOP_BUFFER_ATR = 0.20
 MIN_CONFIRM_BODY = 0.65
 STATE_FILE = Path("state.json")
-BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
-API_KEY = os.environ["TWELVEDATA_API_KEY"]
+BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+API_KEY = os.environ.get("TWELVEDATA_API_KEY", "")
 FINZDATA_API_KEY = os.environ.get("FINZDATA_API_KEY", "").strip()
+FINZDATA_CONTEXT_ENABLED = os.environ.get("FINZDATA_CONTEXT_ENABLED", "false").lower() == "true"
 
 
 def send(text):
+    if not BOT_TOKEN or not CHAT_ID:
+        raise RuntimeError("Telegram credentials are required to send a message")
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     body = urllib.parse.urlencode({"chat_id": CHAT_ID, "text": text,
                                    "disable_web_page_preview": "true"}).encode()
@@ -41,6 +44,8 @@ def send(text):
 
 
 def fetch(interval):
+    if not API_KEY:
+        raise RuntimeError("TWELVEDATA_API_KEY is missing")
     params = urllib.parse.urlencode({"symbol": SYMBOL, "interval": interval,
         "outputsize": OUTPUTSIZE, "timezone": "UTC", "apikey": API_KEY, "format": "JSON"})
     req = urllib.request.Request(API + "?" + params, headers={"User-Agent": "Gold-SD-Bot/1.0"})
@@ -204,8 +209,10 @@ def confirmation(bars, zone):
 
 def comex_daily_context():
     """Non-directional COMEX participation context; never changes signal scoring."""
+    if not FINZDATA_CONTEXT_ENABLED:
+        return "COMEX: اختبار السياق غير مفعّل في التشغيل الحي."
     if not FINZDATA_API_KEY:
-        return "COMEX: بيانات الحجم اليومي غير مفعّلة (مفتاح FinzData غير موجود)."
+        return "COMEX: مفتاح FinzData غير موجود؛ لم تُستخدم بيانات الحجم."
     today = dt.datetime.now(dt.timezone.utc).date()
     start = today - dt.timedelta(days=30)
     params = urllib.parse.urlencode({
@@ -259,7 +266,7 @@ def comex_daily_context():
         except (TypeError, ValueError, ZeroDivisionError):
             pass
         return (f"COMEX GC اليومي ({latest_day.isoformat()}): Volume {latest_volume:,.0f} "
-                f"({volume_state}؛ {ratio:.2f}x)، {oi_text}. "
+                f"({volume_state}؛ {ratio:.2f}x مقابل متوسط {len(prior)} جلسة)، {oi_text}. "
                 "معلومة سياقية غير اتجاهية وليست إشارة BUY/SELL.")
     except Exception as exc:
         print(f"FinzData context unavailable: {exc}")

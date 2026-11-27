@@ -137,6 +137,7 @@ def detect_zones(bars, tf):
             # هذا تقدير حسابي لشكل الاقتراب، وليس قياساً بصرياً لزاوية الرسم.
             arrival_points = 1 if approach_shape_proxy(
                 bars, zone_ref, lookback=5) else 0
+            last = bars[-1]
             stop = zlo - STOP_BUFFER_ATR*a if direction == "DEMAND" else zhi + STOP_BUFFER_ATR*a
             rr, rr_points = 0.0, 0
             target = None

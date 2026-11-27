@@ -26,7 +26,7 @@ def fetch(interval, delta, days, now):
         bars.append({"time":x["datetime"],**{k:float(x[k]) for k in ("open","high","low","close")}})
     bars.sort(key=lambda x:x["time"])
     if len(bars)>1: bars=bars[:-1]
-    if len(bars)<40: raise RuntimeError(f"Insufficient closed {interval} candles: {len(bars)}")
+    if len(bars)<20: raise RuntimeError(f"Insufficient closed {interval} candles: {len(bars)}")
     return bars
 
 def main():
@@ -44,7 +44,7 @@ def main():
         print(f"Checkpoint {idx}/{n}: {point.isoformat()}")
         for _,label,_delta in TFS:
             available=[b for b in histories[label] if dt.datetime.strptime(b["time"],"%Y-%m-%d %H:%M:%S").replace(tzinfo=dt.timezone.utc)<=point]
-            if len(available)<40:
+            if len(available)<20:
                 records.append({"checkpoint":idx,"time_utc":point.isoformat(),"tf":label,"status":"INSUFFICIENT_HISTORY"}); continue
             window=available[-180:]
             try:

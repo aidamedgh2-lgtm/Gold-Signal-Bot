@@ -11,6 +11,7 @@ from pathlib import Path
 
 from services.market_data import fetch_twelvedata_candles
 from services.telegram import send_telegram_message
+from services.vision_review import assess_candidate
 
 API = "https://api.twelvedata.com/time_series"
 SYMBOL = "XAU/USD"
@@ -29,6 +30,8 @@ STATE_FILE = Path("state.json")
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 API_KEY = os.environ.get("TWELVEDATA_API_KEY", "")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
+OPENAI_VISION_MODEL = os.environ.get("OPENAI_VISION_MODEL", "gpt-4.1-mini").strip()
 FINZDATA_API_KEY = os.environ.get("FINZDATA_API_KEY", "").strip()
 FINZDATA_CONTEXT_ENABLED = os.environ.get("FINZDATA_CONTEXT_ENABLED", "false").lower() == "true"
 
@@ -260,8 +263,45 @@ def main():
     for _, label in TIMEFRAMES:
         all_zones.extend(detect_zones(data[label], label))
     if not all_zones:
-        print("لا توجد مناطق عرض/طلب مستوفية لتعريف الحركة.")
+        print("لا توجد مناطق مرشحة.")
         return
+
+    # AI vision reviews only chart-visible departure and approach geometry.
+    # It does not decide direction, levels, score, or whether a trade is valid.
+    tf_order = [x[1] for x in TIMEFRAMES]
+    ranked = sorted(all_zones, key=lambda z: (tf_order.index(z["tf"]), z["created"]))
+    review_lines = []
+    for zone in ranked[:3]:
+        label = f'{zone["tf"]} {zone["direction"]}: {zone["low"]:.2f}–{zone["high"]:.2f}'
+        if not OPENAI_API_KEY:
+            review_lines.append(label + " — AI غير مفعّل: OPENAI_API_KEY غير موجود.")
+            continue
+        try:
+            visual = assess_candidate(
+                data[zone["tf"]], zone, OPENAI_API_KEY, OPENAI_VISION_MODEL
+            )
+            confidence_pct = round(visual["confidence"] * 100)
+            review_lines.append(
+                label + f' — الانطلاق: {visual["departure"]}؛ '
+                f'الاقتراب: {visual["approach"]}؛ وضوح المنطقة: {visual["zone_readability"]}؛ '
+                f'ثقة النموذج: {confidence_pct}%'
+                + f'؛ الدليل: {visual["evidence"]}'
+                + (f'؛ سبب عدم الحسم: {visual["unknown_reason"]}' if visual["unknown_reason"] else "")
+            )
+        except Exception as exc:
+            # Fail closed: an API/model/chart error must never create a score.
+            print(f'Vision review unavailable for {label}: {exc}')
+            review_lines.append(label + " — تعذر التقييم البصري؛ لا نقاط.")
+    send(
+        "👁️ مراجعة بصرية بالذكاء الاصطناعي — XAU/USD\n"
+        + "\n".join(review_lines)
+        + "\nالمرجع STRATEGY_REFERENCE.md أُرسل إلى نموذج الرؤية مع كل صورة. "
+          "هذه ملاحظات بصرية أولية فقط. لم تُحسب علامة /10 ولم تصدر صفقة؛ "
+          "بقية معايير PDF (التوافق الهرمي، الزيارات، المدة، R:R والهدف) "
+          "ما زالت تحتاج ربطاً واختباراً حرفياً. لا يوجد تنفيذ أوامر."
+    )
+    print("Candidate chart vision review complete; trade scoring remains gated.")
+    return
 
     comex_note = comex_daily_context()
     print(comex_note)

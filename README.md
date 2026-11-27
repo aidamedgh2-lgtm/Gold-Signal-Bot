@@ -21,14 +21,31 @@ represented by OHLC/ATR proxies and therefore are **not yet proven faithful**
 to the PDF. This branch is a structural cleanup, not a claim of a validated
 profitable strategy.
 
-## Required next work
+## PDF-grounded AI review and compliance gate
 
-1. Add criterion-level tests and manually scored golden cases from the PDF.
-2. Replace unsupported visual guesses with an explicit unknown state.
-3. Validate zone detection, scoring, entry, stop and target against the PDF.
-4. Backtest and forward-test on suitable data, accounting for costs and feed
-   differences.
-5. Keep alerts paper-only until all acceptance gates pass.
+- `AI_AUDIT_CONTRACT.md` is the mandatory instruction set for any AI code/strategy audit. It makes the original PDF the sole authority, prohibits strategy drift and unsupported heuristics, requires evidence for every finding, and blocks claims of full compliance when source or chart evidence is missing.
+- AI audit findings must distinguish source fidelity, software correctness, and trading performance. Unknown source rules remain unresolved; they must never be filled by model assumptions.
+
+## PDF-grounded AI vision review
+
+- `STRATEGY_REFERENCE.md` is derived from the original 143-page PDF and is
+  loaded into every OpenAI vision request alongside the chart image.
+- The model classifies departure and approach shape and reports whether the
+  candidate zone is visually readable. It cannot assign a trade score, choose
+  direction, or invent entry/stop/target levels.
+- The scoring primitives are unit-tested against the PDF's six criteria.
+- The runtime remains in candidate-alert mode: it does not yet calculate a
+  complete validated /10 score or issue trade recommendations. The PDF does
+  not fully specify a numerical zone-thickness algorithm or every entry detail.
+
+## Remaining acceptance work
+
+1. Build manually labelled golden examples from the PDF's chart illustrations.
+2. Validate zone boundaries, hierarchical alignment, visits, D1/H4 duration,
+   and target/stop placement criterion by criterion.
+3. Backtest on broker-matched data with spread/slippage and sufficient sample.
+4. Forward-test in paper/demo mode before enabling any signal output.
+5. Keep broker execution disabled.
 
 ## Configuration
 
@@ -37,6 +54,8 @@ Set these repository Actions secrets:
 - `TWELVEDATA_API_KEY`
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
+- `OPENAI_API_KEY` (required for AI chart review)
+- `OPENAI_VISION_MODEL` (optional; defaults to `gpt-4.1-mini`)
 
 Do not paste or commit secret values. The scheduled GitHub Actions workflow is
 best-effort and is not a guaranteed always-on 24/5 service.

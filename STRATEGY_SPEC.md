@@ -1,48 +1,38 @@
-# Strategy contract — original Supply & Demand
+# Strategy contract — original Supply & Demand PDF
 
-This file is the governing contract for the rebuild. The original 143-page
-strategy PDF remains the source of truth; this document records the agreed
-six-part score and explicitly blocks silent substitution by EMA/RSI/ICT rules.
+Source: user's original 143-page PDF, «المضغوط (1).pdf». See [STRATEGY_REFERENCE.md](STRATEGY_REFERENCE.md), which is injected into the AI vision prompt. The PDF remains authoritative.
 
-## Required score (10 points)
+## Six criteria (10 points total)
 
 | Criterion | Maximum | Rule |
 |---|---:|---|
-| Departure strength | 2 | Visual classification: sideways=0, diagonal=1, sharp/near-vertical=2 |
-| Reward/risk | 2 | Stop beyond the departure zone; target at the prior opposing destination; 3:1=2, 2:1=1, 1:1=0 |
-| Higher-timeframe context | 2 | Hierarchical alignment across at least three timeframes=2 |
-| Zone visits | 2 | First return=2, second=1, third or later=0 |
-| Time in zone | 1 | Four candles or fewer=1; five or more=0, subject to the PDF's D1/H4 counting instructions |
-| Approach to zone | 1 | Fast/strong approach=1; diagonal or sideways=0 |
+| Departure shape | 2 | Horizontal/sideways 0; smooth diagonal about 45° = 1; steep/near-vertical about 70–90° = 2 |
+| Reward/risk | 2 | Stop beyond departure zone; target at opposing destination reached in prior move. 3:1=2, 2:1=1, 1:1=0 |
+| Big picture / MTF | 2 | Start at largest frame and compare same approximate zone on successive smaller frames. 3+ ordered hierarchical matches=2; 2=1; 1=0 |
+| Zone visits | 2 | Fresh/unvisited or first return=2; second return=1; third or later=0 |
+| Time inside/touching zone | 1 | Count touching/inside candles on D1 and H4; <=4=1; >=5=0 |
+| Approach shape | 1 | Fast/rocket-like return=1; diagonal or sideways=0 |
+
+## Decision thresholds
+- 9–10: suitable for a pending order only when all six criteria and required price levels are established.
+- 7–8: monitor; wait for price action, correction, or retest. 8 is not a pending-order threshold.
+- 0–6: no entry under this method.
+- Any unknown criterion means no final total or trade recommendation.
 
 ## Fidelity constraints
-
-- Departure strength and approach shape are separate observations.
-- Consecutive candles touching a zone during one continuous return are one visit.
-- Do not present ATR/OHLC proxies as equivalent to the PDF's visual judgments.
-- Where a visual judgment cannot be established from available data, mark it
-  as unknown and do not invent a score.
-- The exact treatment of an 8/10 score and any ambiguous counting detail must
-  be resolved against the PDF before final signal policy is enabled.
-- No EMA/RSI/ICT condition may replace or veto the original six criteria.
-- The hybrid layer may assist zone discovery and validation only after
-  criterion-level fidelity is demonstrated.
+- Departure and approach are separate visual judgments.
+- The PDF's final approach examples mention a path resembling 7 or 8; its exact geometry is not formally defined, so AI must use uncertainty rather than inventing a numeric rule.
+- Consecutive candles in one continuous touch are one visit.
+- Fresh/unvisited and first return receive 2 visit points.
+- Duration counts zone-touching candles, not base-formation candles.
+- Do not substitute ATR/OHLC proxies for visual judgments.
+- Do not use arbitrary R-multiple targets; the target is the opposing destination reached by the first move.
+- Do not impose an M15 confirmation-candle rule absent from the PDF.
+- The PDF does not fully specify numerical zone thickness, a universal entry point within the zone, or how to reconcile conflicting D1/H4 duration counts. Mark these unknown.
+- No EMA/RSI/ICT rule may replace or veto the six criteria.
 
 ## Runtime boundaries
-
-- Market data remains supplied by the existing Twelve Data integration.
-- Notifications remain supplied by the existing Telegram bot integration.
-- Secrets remain in GitHub Actions repository secrets; never commit credentials.
-- The first release is alert-only. It must never submit broker orders.
-- Intended monitoring is 24/5, but GitHub Actions schedules are best-effort;
-  do not describe them as guaranteed real-time operation.
-
-## Acceptance gates
-
-1. Unit tests for deterministic calculations and service adapters.
-2. Golden-case comparison against manually scored examples from the PDF.
-3. Criterion-by-criterion agreement report; visual proxies must be labelled.
-4. Historical test with realistic spread/slippage and adequate sample size.
-5. Demo/paper forward test before any live reliance.
-6. Do not merge or enable automated trade execution merely because syntax
-   checks or unit tests pass.
+- Twelve Data remains the market-data source; Telegram remains the notification channel.
+- No broker order execution.
+- GitHub Actions schedules are best-effort, not guaranteed always-on 24/5 monitoring.
+- Keep trade signals gated until zone detection and all six criteria pass criterion-level golden-case validation.

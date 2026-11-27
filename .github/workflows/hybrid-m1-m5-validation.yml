@@ -4,8 +4,11 @@ on:
   push:
     branches:
       - research/hybrid-m1-m5-validation
+      - repair/full-system-v1
     paths:
       - 'hybrid_research.py'
+      - 'hybrid_context.py'
+      - 'tests/test_hybrid_context.py'
       - 'tests/test_hybrid_research.py'
       - 'supply_demand_live.py'
       - 'supply_demand_backtest.py'
@@ -47,7 +50,7 @@ jobs:
         env:
           TWELVEDATA_API_KEY: offline-test-key
         run: |
-          python -m py_compile supply_demand_live.py supply_demand_backtest.py hybrid_research.py
+          python -m py_compile supply_demand_live.py supply_demand_backtest.py hybrid_research.py hybrid_context.py
           python -m unittest discover -s tests -v
       - name: Replay original and hybrid models on historical closed candles
         env:

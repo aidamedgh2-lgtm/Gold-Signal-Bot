@@ -25,6 +25,9 @@ def fetch_closed_m15():
         raise RuntimeError("Twelve Data error: " + str(payload.get("message") or payload))
     bars = [{"time": x["datetime"], **{k: float(x[k]) for k in ("open", "high", "low", "close")}} for x in payload["values"]]
     bars.sort(key=lambda x: x["time"])
+    timestamps = [bar["time"] for bar in bars]
+    if len(set(timestamps)) != len(timestamps):
+        raise RuntimeError("Duplicate M15 candle timestamps; refusing to process data")
     if len(bars) > 1:
         bars = bars[:-1]
     if len(bars) < 205:

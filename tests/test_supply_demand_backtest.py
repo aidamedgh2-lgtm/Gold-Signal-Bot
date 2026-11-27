@@ -37,6 +37,22 @@ class SupplyDemandBacktestTests(unittest.TestCase):
         self.assertEqual(result["exit_reason"], "stop_and_tp_same_bar_stop_first")
         self.assertEqual(result["net_r"], -1)
 
+    def test_identical_duplicate_timestamp_is_deduplicated(self):
+        start = bt.parse_time("2026-01-01 00:00:00")
+        row = {"time": "2026-01-01", "open": 1.0, "high": 2.0,
+               "low": 0.5, "close": 1.5, "_start": start, "_end": start}
+        bars, count = bt.deduplicate_bars([row, dict(row)], "MN1")
+        self.assertEqual(len(bars), 1)
+        self.assertEqual(count, 1)
+
+    def test_conflicting_duplicate_timestamp_is_rejected(self):
+        start = bt.parse_time("2026-01-01 00:00:00")
+        first = {"time": "2026-01-01", "open": 1.0, "high": 2.0,
+                 "low": 0.5, "close": 1.5, "_start": start, "_end": start}
+        second = dict(first, close=1.6)
+        with self.assertRaisesRegex(RuntimeError, "conflicting duplicate timestamp"):
+            bt.deduplicate_bars([first, second], "MN1")
+
     def test_profit_factor_undefined_without_losses(self):
         summary = bt.summarize([{"net_r": 1.5}])
         self.assertIsNone(summary["profit_factor"])

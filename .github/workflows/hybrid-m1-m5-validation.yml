@@ -1,0 +1,65 @@
+name: Hybrid M1 M5 historical research
+
+on:
+  push:
+    branches:
+      - research/hybrid-m1-m5-validation
+    paths:
+      - 'hybrid_research.py'
+      - 'tests/test_hybrid_research.py'
+      - 'supply_demand_live.py'
+      - 'supply_demand_backtest.py'
+      - '.github/workflows/hybrid-m1-m5-validation.yml'
+  workflow_dispatch:
+    inputs:
+      cost_r:
+        description: "Estimated transaction cost deducted per trade, in R"
+        required: true
+        default: "0.05"
+        type: choice
+        options: ["0.00", "0.05", "0.10"]
+      history_days:
+        description: "Historical intraday window for M1/M5/M15"
+        required: true
+        default: "30"
+        type: choice
+        options: ["30", "60", "90"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hybrid-m1-m5-validation
+  cancel-in-progress: true
+
+jobs:
+  hybrid-research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out isolated hybrid research branch
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile and run offline regression tests
+        env:
+          TWELVEDATA_API_KEY: offline-test-key
+        run: |
+          python -m py_compile supply_demand_live.py supply_demand_backtest.py hybrid_research.py
+          python -m unittest discover -s tests -v
+      - name: Replay original and hybrid models on historical closed candles
+        env:
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          SD_BACKTEST_OUTPUTSIZE: "5000"
+          SD_INTRADAY_HISTORY_DAYS: ${{ inputs.history_days || '30' }}
+          SD_BACKTEST_COST_R: ${{ inputs.cost_r || '0.05' }}
+        run: python hybrid_research.py
+      - name: Upload hybrid comparison report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hybrid-m1-m5-comparison
+          path: hybrid_research_results/
+          if-no-files-found: warn

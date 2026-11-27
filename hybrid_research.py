@@ -8,6 +8,7 @@ import statistics
 from pathlib import Path
 
 import supply_demand_live as live
+import hybrid_context as hc
 import supply_demand_backtest as bt
 
 OUT = Path("hybrid_research_results")
@@ -93,6 +94,9 @@ def replay(histories, cost_r, start_time, end_time):
         "B_M1_MSS_alternative_with_M5_alignment": {
             "trades":[], "seen":set(), "last_exit":-1,
             "diagnostics":{"setups":0,"m5_confirmations":0,"m1_mss_signals":0,"signals":0}},
+        "C_structure_liquidity_imbalance_momentum": {
+            "trades":[], "seen":set(), "last_exit":-1,
+            "diagnostics":{"setups":0,"context_passes":0,"signals":0}},
     }
     m5_starts = [x["_start"] for x in m5]
     m5_ends = [x["_end"] for x in m5]
@@ -133,6 +137,8 @@ def replay(histories, cost_r, start_time, end_time):
                     break
                 m5_confirm=live.confirmation(m5_prefix,best)
                 m1_mss=mss_confirmation(m1_prefix,best)
+                context_m5=hc.evaluate_context(m5_prefix,direction)
+                context_m1=hc.evaluate_context(m1_prefix,direction)
                 if m5_confirm:
                     diag["m5_confirmations"]+=1
                 if m1_mss:
@@ -149,20 +155,32 @@ def replay(histories, cost_r, start_time, end_time):
                         # until the M5 candle closes, so an earlier M1 fill is not claimed.
                         note+=" + M1 MSS confluence"
                         diag["m1_confluence"]+=1
-                else:
+                elif name.startswith("B_"):
                     # M1 MSS can replace the M5 candle pattern only if M5 direction agrees.
                     if not m1_mss or not directional_m5_alignment(m5_prefix,direction):
                         continue
                     entry=m1_prefix[-1]["close"]
                     entry_time=m1_prefix[-1]["time"]
                     note=m1_mss+" + M5 directional alignment"
+                else:
+                    # Research-only confluence model. It requires aligned M5 structure
+                    # and momentum, plus M1 liquidity sweep or M1 FVG in trade direction.
+                    if not (context_m5["structure_aligned"]
+                            and context_m5["momentum_aligned"]
+                            and (context_m1["liquidity_aligned"] or context_m1["fvg_aligned"])):
+                        continue
+                    diag["context_passes"] += 1
+                    entry=m5_prefix[-1]["close"]
+                    entry_time=m5_prefix[-1]["time"]
+                    note="M5 structure+momentum; M1 liquidity/FVG confluence"
                 result=bt.simulate_trade(m5_prefix+plain["M5"][i+1:],i,direction,entry,best["stop"],cost_r=cost_r)
                 if result is None:
                     diag["invalid_trade_skips"] = diag.get("invalid_trade_skips",0)+1
                     continue
                 trade={"variant":name,"signal_time":entry_time,"direction":direction,
                     "zone_tf":best["tf"],"score":best["score"],"zone_low":best["low"],
-                    "zone_high":best["high"],"confirmation":note,"entry":entry,"stop":best["stop"],**result}
+                    "zone_high":best["high"],"confirmation":note,"entry":entry,"stop":best["stop"],
+                    "m5_context":context_m5,"m1_context":context_m1,**result}
                 if not commit_trade(state,zone_key,trade):
                     diag["invalid_trade_skips"] = diag.get("invalid_trade_skips",0)+1
                     continue

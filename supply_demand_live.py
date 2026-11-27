@@ -256,12 +256,15 @@ def comex_daily_context():
         volume_state = ("أعلى من متوسط 20 جلسة" if ratio >= 1.15 else
                         ("أقل من متوسط 20 جلسة" if ratio <= 0.85 else
                          "قريب من متوسط 20 جلسة"))
-        oi_text = "Open Interest غير متاح"
+        oi_text = "Open Interest غير متاح أو غير صالح للمقارنة"
         try:
-            if latest_oi not in (None, "") and prior[-1][2] not in (None, ""):
-                oi_change = float(latest_oi) - float(prior[-1][2])
-                oi_pct = (oi_change / float(prior[-1][2]) * 100
-                          if float(prior[-1][2]) else 0)
+            latest_oi_value = float(latest_oi)
+            previous_oi_value = float(prior[-1][2])
+            # Zero/negative OI values are not accepted for percentage comparison.
+            if (math.isfinite(latest_oi_value) and math.isfinite(previous_oi_value)
+                    and latest_oi_value > 0 and previous_oi_value > 0):
+                oi_change = latest_oi_value - previous_oi_value
+                oi_pct = oi_change / previous_oi_value * 100
                 oi_text = f"Open Interest {'ارتفع' if oi_change > 0 else ('انخفض' if oi_change < 0 else 'لم يتغير')} ({oi_pct:+.2f}%)"
         except (TypeError, ValueError, ZeroDivisionError):
             pass

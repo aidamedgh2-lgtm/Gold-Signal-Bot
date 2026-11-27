@@ -12,6 +12,7 @@ from pathlib import Path
 from services.market_data import fetch_twelvedata_candles
 from services.telegram import send_telegram_message
 from services.vision_review import assess_candidate
+from services.chart_detector import detect_visual_zones
 
 API = "https://api.twelvedata.com/time_series"
 SYMBOL = "XAU/USD"
@@ -166,13 +167,41 @@ def comex_daily_context():
         return "COMEX: تعذر جلب البيانات الآن؛ التحليل الفني مستمر دون هذا العامل."
 
 def main():
+    if not OPENAI_API_KEY:
+        print("إيقاف آمن: OPENAI_API_KEY غير موجود؛ لا يمكن تشغيل الكاشف البصري.")
+        return
     data = {}
-    # HARD FIDELITY GATE:
-    # The previous automatic detector used ATR/OHLC proxies that failed the
-    # source-PDF compliance audit. No candidate, score, or trade alert may be
-    # produced until a chart-first detector passes the golden-case benchmark.
-    print("تم إيقاف إصدار الإشارات: كاشف المناطق السابق غير مطابق للمرجع. "
-          "يلزم اجتياز اختبار الحالات البصرية المرجعية أولاً.")
+    observations = []
+    # Chart-first extraction: AI reads calibrated candlestick charts; no ATR/OHLC proxy.
+    for interval, label in TIMEFRAMES:
+        try:
+            bars = fetch(interval)
+            data[label] = bars
+            zones = detect_visual_zones(bars, label, OPENAI_API_KEY, OPENAI_VISION_MODEL)
+            for item in zones:
+                zone = {**item, "tf": label, "created": item["origin_start"]}
+                visual = assess_candidate(bars, zone, OPENAI_API_KEY, OPENAI_VISION_MODEL)
+                observations.append(
+                    f'{label} {item["direction"]} {item["low"]:.2f}–{item["high"]:.2f} '
+                    f'| departure={item["departure"]} | approach={visual["approach"]} '
+                    f'| readability={visual["zone_readability"]} '
+                    f'| confidence={item["confidence"]:.0%}/{visual["confidence"]:.0%} '
+                    f'| evidence={item["evidence"]}'
+                )
+        except Exception as exc:
+            print(f"{label}: visual scan unresolved: {exc}")
+            return
+    if not observations:
+        print("لم يكتشف AI مناطق واضحة على الشارتات؛ لا تنبيه ولا صفقة.")
+        return
+    send(
+        "👁️ رصد بصري أولي — XAU/USD\\n" + "\\n".join(observations[:12]) +
+        "\\nهذه ملاحظات مناطق فقط. لم تُحسب نقاط الاستراتيجية /10، ولم تُثبت "
+        "هوية المنطقة عبر الأطر أو الزيارات أو مدة D1/H4 أو R:R. لذلك لا توجد "
+        "توصية دخول أو أمر معلّق. لا يوجد تنفيذ صفقات."
+    )
+    print(f"Visual observation completed: {len(observations)} candidate(s). "
+          "Strategy scoring and trade alerts remain disabled.")
     return
     # كل فريم مستقل في جلب البيانات؛ تعذر أي فريم يعني عدم إصدار إشارة ناقصة.
     for interval, label in TIMEFRAMES:

@@ -1,0 +1,101 @@
+import os
+import unittest
+from unittest.mock import patch
+
+os.environ.setdefault("TWELVEDATA_API_KEY", "offline-test-key")
+
+import backtest
+import forward_test
+
+
+def candle(stamp, open_, high, low, close):
+    return {
+        "time": stamp,
+        "open": float(open_),
+        "high": float(high),
+        "low": float(low),
+        "close": float(close),
+    }
+
+
+class HistoricalBacktestExecutionTests(unittest.TestCase):
+    def setUp(self):
+        self.signal = {
+            0: {"direction": "BUY", "stop": 99.0, "risk": 1.0}
+        }
+
+    def test_entry_candle_stop_is_counted(self):
+        bars = [
+            candle("2026-11-27 12:00:00", 100, 101, 99.5, 100),
+            candle("2026-11-27 12:15:00", 100, 101, 98, 99),
+            candle("2026-11-27 12:30:00", 99, 100, 98.5, 99),
+        ]
+        trades = backtest.simulate(bars, self.signal, "test")
+        self.assertEqual(len(trades), 1)
+        self.assertEqual(trades[0]["r_multiple"], -1.0)
+        self.assertEqual(trades[0]["exit_reason"], "stop")
+        self.assertEqual(trades[0]["exit_time"], bars[1]["time"])
+
+    def test_stop_wins_when_stop_and_target_touch_same_entry_candle(self):
+        bars = [
+            candle("2026-11-27 12:00:00", 100, 101, 99.5, 100),
+            candle("2026-11-27 12:15:00", 100, 102.5, 98, 100),
+        ]
+        trades = backtest.simulate(bars, self.signal, "test")
+        self.assertEqual(len(trades), 1)
+        self.assertEqual(trades[0]["r_multiple"], -1.0)
+        self.assertEqual(trades[0]["exit_reason"], "stop")
+
+    def test_gap_through_buy_stop_rejects_entry(self):
+        bars = [
+            candle("2026-11-27 12:00:00", 100, 101, 99.5, 100),
+            candle("2026-11-27 12:15:00", 98.5, 99, 98, 98.7),
+        ]
+        self.assertEqual(backtest.simulate(bars, self.signal, "test"), [])
+
+
+class ForwardPaperExecutionTests(unittest.TestCase):
+    def _state(self):
+        return {
+            "test_start_utc": "2026-11-26T00:00:00+00:00",
+            "books": {
+                "ICT": {"active": None, "trades": []},
+                "ICT + Fibonacci Classic": {"active": None, "trades": []},
+            },
+        }
+
+    def test_entry_candle_stop_is_counted_for_both_books(self):
+        bars = [
+            candle("2026-11-27 12:00:00", 100, 101, 99.5, 100),
+            candle("2026-11-27 12:15:00", 100, 101, 98, 99),
+        ]
+        signal = {"direction": "BUY", "stop": 99.0, "risk": 1.0}
+        with patch.object(forward_test, "atr", return_value=1.0), \
+             patch.object(forward_test, "live_ict_candidate", return_value=signal), \
+             patch.object(forward_test, "fibonacci_classic_near", return_value=True):
+            state = self._state()
+            forward_test.process_bar(state, bars, 1)
+        for book in state["books"].values():
+            self.assertEqual(len(book["trades"]), 1)
+            self.assertEqual(book["trades"][0]["r"], -1.0)
+            self.assertEqual(book["trades"][0]["exit_reason"], "stop")
+            self.assertIsNone(book["active"])
+
+    def test_gap_through_buy_stop_rejects_forward_entry(self):
+        bars = [
+            candle("2026-11-27 12:00:00", 100, 101, 99.5, 100),
+            candle("2026-11-27 12:15:00", 98.5, 99, 98, 98.7),
+        ]
+        signal = {"direction": "BUY", "stop": 99.0, "risk": 1.0}
+        with patch.object(forward_test, "atr", return_value=1.0), \
+             patch.object(forward_test, "live_ict_candidate", return_value=signal), \
+             patch.object(forward_test, "fibonacci_classic_near", return_value=True):
+            state = self._state()
+            forward_test.process_bar(state, bars, 1)
+        for book in state["books"].values():
+            self.assertEqual(book["trades"], [])
+            self.assertIsNone(book["active"])
+
+
+if __name__ == "__main__":
+    unittest.main()

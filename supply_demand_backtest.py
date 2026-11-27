@@ -59,10 +59,10 @@ def fetch(interval, label):
     if "values" not in payload:
         raise RuntimeError(f"Twelve Data {label}: {payload.get('message') or payload}")
     raw_items = sorted(payload["values"], key=lambda item: item["datetime"])
-    # Twelve Data can return a very long monthly history; old 1970s rows contain
-    # malformed OHLC and are irrelevant to this recent M15 replay window.
-    if label == "MN1":
-        raw_items = raw_items[-36:]
+    # Twelve Data can return decades of old history with malformed early OHLC.
+    # Retain only the recent context needed for this M15 replay.
+    history_limits = {"MN1": 36, "W1": 104, "D1": 260, "H4": 1000, "H1": 2500, "M15": 5000}
+    raw_items = raw_items[-history_limits[label]:]
     rows, invalid = [], []
     for item in raw_items:
         try:

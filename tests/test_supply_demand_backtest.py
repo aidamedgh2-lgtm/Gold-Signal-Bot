@@ -100,7 +100,7 @@ class SupplyDemandBacktestTests(unittest.TestCase):
     def test_intraday_history_window_rejects_invalid_days(self):
         import os
         from unittest.mock import patch
-        with patch.dict(os.environ, {"SD_INTRADAY_HISTORY_DAYS": "0"}):
+        with patch.dict(os.environ, {"SD_INTRADAY_HISTORY_DAYS": "0", "TWELVEDATA_API_KEY": "test"}):
             with self.assertRaisesRegex(RuntimeError, "between 1 and 365"):
                 bt.fetch_history("1min", "M1", "1min")
 

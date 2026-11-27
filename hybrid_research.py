@@ -69,7 +69,7 @@ def directional_m5_alignment(m5, direction):
     return cur["close"] < prev["close"] and cur["close"] < cur["open"]
 
 
-def replay(histories, cost_r):
+def replay(histories, cost_r, start_time, end_time):
     m5, m1 = histories["M5"], histories["M1"]
     m1_ends = [x["_end"] for x in m1]
     m15_ends = [x["_end"] for x in histories["M15"]]
@@ -84,7 +84,11 @@ def replay(histories, cost_r):
             "trades":[], "seen":set(), "last_exit":-1,
             "diagnostics":{"setups":0,"m5_confirmations":0,"m1_mss_signals":0,"signals":0}},
     }
-    for i in range(120,len(m5)-1):
+    m5_starts = [x["_start"] for x in m5]
+    m5_ends = [x["_end"] for x in m5]
+    first_i = max(120, bisect.bisect_left(m5_starts, start_time))
+    last_i = min(len(m5)-2, bisect.bisect_right(m5_ends, end_time)-1)
+    for i in range(first_i,last_i+1):
         decision=m5[i]["_end"]
         price=m5[i]["close"]
         m5_prefix=plain["M5"][:i+1]
@@ -111,7 +115,12 @@ def replay(histories, cost_r):
                 direction="BUY" if best["direction"]=="DEMAND" else "SELL"
                 zone_key=(best["tf"],best["direction"],round(best["low"],4),round(best["high"],4),best["created"])
                 if zone_key in state["seen"]:
+                    diag["duplicate_zone_skips"] = diag.get("duplicate_zone_skips",0)+1
                     continue
+                # Never consume a zone while another position is still open.
+                if i<=state["last_exit"]:
+                    diag["overlap_skips"] = diag.get("overlap_skips",0)+1
+                    break
                 m5_confirm=live.confirmation(m5_prefix,best)
                 m1_mss=mss_confirmation(m1_prefix,best)
                 if m5_confirm:
@@ -137,29 +146,33 @@ def replay(histories, cost_r):
                     entry=m1_prefix[-1]["close"]
                     entry_time=m1_prefix[-1]["time"]
                     note=m1_mss+" + M5 directional alignment"
+                result=bt.simulate_trade(m5_prefix+plain["M5"][i+1:],i,direction,entry,best["stop"],cost_r=cost_r)
+                if result is None:
+                    diag["invalid_trade_skips"] = diag.get("invalid_trade_skips",0)+1
+                    continue
                 state["seen"].add(zone_key)
                 diag["signals"]+=1
-                if i<=state["last_exit"]:
-                    break
-                result=bt.simulate_trade(m5_prefix+plain["M5"][i+1:],i,direction,entry,best["stop"],cost_r=cost_r)
-                if result is not None:
-                    state["trades"].append({"variant":name,"signal_time":entry_time,"direction":direction,
-                        "zone_tf":best["tf"],"score":best["score"],"zone_low":best["low"],
-                        "zone_high":best["high"],"confirmation":note,"entry":entry,"stop":best["stop"],**result})
-                    state["last_exit"]=result["exit_index"]
+                state["trades"].append({"variant":name,"signal_time":entry_time,"direction":direction,
+                    "zone_tf":best["tf"],"score":best["score"],"zone_low":best["low"],
+                    "zone_high":best["high"],"confirmation":note,"entry":entry,"stop":best["stop"],**result})
+                state["last_exit"]=result["exit_index"]
                 break
     return variants
 
 
-def replay_original(histories,cost_r,start_time,end_time):
-    """Original live rules replayed on the exact M5 sample's calendar window."""
-    m15_all=histories["M15"]
-    m15=[b for b in m15_all if start_time<=b["_end"]<=end_time]
+def replay_original(histories,cost_r,start_time,end_time,min_score=9):
+    """Original rules, with research-only score thresholds; 9 is the live threshold."""
+    m15=histories["M15"]
     tf_ends={tf:[x["_end"] for x in histories[tf]] for tf in ZONE_TFS if tf!="M15"}
     plain=bt.strip_internal(m15)
+    m15_ends=[x["_end"] for x in m15]
+    first_i=max(34,bisect.bisect_left(m15_ends,start_time))
+    last_i=min(len(m15)-2,bisect.bisect_right(m15_ends,end_time)-1)
     trades,seen,last_exit=[],set(),-1
-    diag={"decision_bars":0,"setups_score_7_plus":0,"score_above_8":0,"confirmed_signals":0}
-    for i in range(34,len(m15)-1):
+    diag={"decision_bars":0,"best_score_histogram":{str(x):0 for x in range(11)},
+          "setups_score_7_plus":0,"threshold_passes":0,"confirmed_signals":0,
+          "overlap_skips":0,"invalid_trade_skips":0}
+    for i in range(first_i,last_i+1):
         decision=m15[i]["_end"]
         zones=[]
         for tf in ZONE_TFS:
@@ -176,11 +189,12 @@ def replay_original(histories,cost_r,start_time,end_time):
         if not candidates:
             continue
         best=candidates[0]
+        diag["best_score_histogram"][str(best["score"])] += 1
         if best["score"]>=7:
             diag["setups_score_7_plus"]+=1
-        if best["score"]<=8:
+        if best["score"]<min_score:
             continue
-        diag["score_above_8"]+=1
+        diag["threshold_passes"]+=1
         confirm=live.confirmation(plain[:i+1],best)
         if not confirm:
             continue
@@ -188,15 +202,18 @@ def replay_original(histories,cost_r,start_time,end_time):
         key=(best["tf"],best["direction"],round(best["low"],4),round(best["high"],4),best["created"])
         if key in seen:
             continue
-        seen.add(key)
         if i<=last_exit:
+            diag["overlap_skips"]+=1
             continue
         direction="BUY" if best["direction"]=="DEMAND" else "SELL"
         result=bt.simulate_trade(plain,i,direction,m15[i]["close"],best["stop"],cost_r=cost_r)
-        if result:
-            trades.append({"signal_time":m15[i]["time"],"direction":direction,"zone_tf":best["tf"],
-                "score":best["score"],"confirmation":confirm,**result})
-            last_exit=result["exit_index"]
+        if result is None:
+            diag["invalid_trade_skips"]+=1
+            continue
+        seen.add(key)
+        trades.append({"signal_time":m15[i]["time"],"direction":direction,"zone_tf":best["tf"],
+            "score":best["score"],"confirmation":confirm,**result})
+        last_exit=result["exit_index"]
     return {"diagnostics":diag,"all":bt.summarize(trades),"trades":trades}
 
 
@@ -206,8 +223,20 @@ def main():
     for interval,label,kind in HISTORY:
         histories[label],quality[label]=bt.fetch_history(interval,label,kind)
         print(f"{label}: {len(histories[label])} closed bars; {histories[label][0]['time']} .. {histories[label][-1]['time']}")
-    variants=replay(histories,cost)
-    baseline=replay_original(histories,cost,histories["M5"][0]["_start"],histories["M5"][-1]["_end"])
+    # Compare all models only where both M1 and M5 histories overlap.
+    common_start=max(histories["M5"][0]["_start"],histories["M1"][0]["_end"])
+    common_end=min(histories["M5"][-1]["_end"],histories["M1"][-1]["_end"])
+    if common_start >= common_end:
+        raise RuntimeError("M1 and M5 have no common closed-candle calendar window.")
+    variants=replay(histories,cost,common_start,common_end)
+    baseline_by_threshold={str(threshold):replay_original(histories,cost,common_start,common_end,threshold)
+                           for threshold in (7,8,9)}
+    baseline=baseline_by_threshold["9"]
+    split_time=common_start+(common_end-common_start)*0.70
+    def split_trades(trades):
+        inside=[t for t in trades if bt.parse_time(t["signal_time"]) < split_time]
+        outside=[t for t in trades if bt.parse_time(t["signal_time"]) >= split_time]
+        return inside,outside
     OUT.mkdir(exist_ok=True)
     report={
         "purpose":"Research only; neither hybrid variant changes the live bot.",
@@ -219,7 +248,10 @@ def main():
         "quality_gate":"M5 ATR regime rejects volatility spikes above 2.5x trailing median ATR; no volume confirmation because source lacks reliable spot-gold volume.",
         "cost_model":f"{cost:.4f}R fixed cost deduction per trade; proxy, not measured HFM spread/slippage.",
         "history":{tf:{"bars":len(histories[tf]),"first":histories[tf][0]["time"],"last":histories[tf][-1]["time"],"quality":quality[tf]} for tf in histories},
+        "common_comparison_window":{"start":common_start.isoformat(),"end":common_end.isoformat(),
+            "calendar_split_70pct":split_time.isoformat()},
         "original_strategy_same_calendar_window":baseline,
+        "original_score_threshold_diagnostics":baseline_by_threshold,
         "variants":{},
         "limitations":["Twelve Data spot feed differs from HFM CFD feed.",
             "M1/M5 history is limited by provider output limits.",
@@ -230,9 +262,10 @@ def main():
     for name,state in variants.items():
         trades=state["trades"]
         split=int(len(trades)*0.7)
+        in_sample,out_sample=split_trades(trades)
         report["variants"][name]={"diagnostics":state["diagnostics"],"all":bt.summarize(trades),
-            "in_sample_first_70pct":bt.summarize(trades[:split]),
-            "out_of_sample_last_30pct":bt.summarize(trades[split:]),"trades":trades}
+            "in_sample_first_70pct_calendar":bt.summarize(in_sample),
+            "out_of_sample_last_30pct_calendar":bt.summarize(out_sample),"trades":trades}
         with (OUT/f"{name}.csv").open("w",newline="",encoding="utf-8") as f:
             if trades:
                 writer=csv.DictWriter(f,fieldnames=list(trades[0]))

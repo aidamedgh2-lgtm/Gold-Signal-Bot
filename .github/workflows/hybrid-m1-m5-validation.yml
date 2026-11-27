@@ -8,6 +8,8 @@ on:
       - repair/clean-system-v1
     paths:
       - 'hybrid_research.py'
+      - 'backtest.py'
+      - 'forward_test.py'
       - 'hybrid_context.py'
       - 'tests/test_hybrid_context.py'
       - 'tests/test_strategy_scoring.py'

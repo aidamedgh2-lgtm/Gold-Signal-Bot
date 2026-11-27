@@ -40,6 +40,20 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Validate replay Python syntax
+        run: python -m py_compile supply_demand_backtest.py supply_demand_live.py strategy_fidelity.py
+
+      - name: Verify Twelve Data key is configured (without exposing it)
+        env:
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+        run: |
+          python - <<'PY'
+          import os
+          if not os.environ.get("TWELVEDATA_API_KEY", "").strip():
+              raise SystemExit("Missing repository Actions secret: TWELVEDATA_API_KEY")
+          print("Twelve Data key is configured; value was not printed.")
+          PY
+
       - name: Run causal Supply/Demand replay
         env:
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}

@@ -1,0 +1,56 @@
+name: Supply Demand causal historical backtest
+
+on:
+  push:
+    branches:
+      - repair/original-strategy-fidelity-v1
+    paths:
+      - "supply_demand_backtest.py"
+      - "supply_demand_live.py"
+      - "strategy_fidelity.py"
+      - ".github/workflows/supply-demand-backtest.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "supply_demand_backtest.py"
+      - "supply_demand_live.py"
+      - "strategy_fidelity.py"
+      - ".github/workflows/supply-demand-backtest.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sd-causal-backtest
+  cancel-in-progress: false
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out the exact PR commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run causal Supply/Demand replay
+        env:
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          SD_COST_R: "0.05"
+          SD_MAX_HOLD_BARS: "96"
+        run: python supply_demand_backtest.py
+
+      - name: Upload Supply/Demand results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supply-demand-causal-backtest
+          path: sd_backtest_results/
+          if-no-files-found: warn

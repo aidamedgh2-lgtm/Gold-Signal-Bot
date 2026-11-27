@@ -26,7 +26,17 @@ class HybridResearchTests(unittest.TestCase):
         changed=bars[:15]+[bar(100,200,1,150,i) for i in range(15,20)]
         self.assertEqual(values[14],h.build_atr_series(changed,14)[14])
 
-    def test_m5_alignment_requires_directional_close(self):
+
+    def test_m5_candle_end_is_five_minutes(self):
+        import supply_demand_backtest as bt
+        start=bt.parse_time("2026-11-27 10:00:00")
+        self.assertEqual(bt.candle_end(start,"5min").isoformat(),"2026-11-27T10:05:00+00:00")
+
+    def test_m1_candle_end_is_one_minute(self):
+        import supply_demand_backtest as bt
+        start=bt.parse_time("2026-11-27 10:00:00")
+        self.assertEqual(bt.candle_end(start,"1min").isoformat(),"2026-11-27T10:01:00+00:00")
+\n    def test_m5_alignment_requires_directional_close(self):
         bars=[bar(99,101,98,100,0),bar(100,102,99,101,1),bar(101,103,100,102,2)]
         self.assertTrue(h.directional_m5_alignment(bars,"BUY"))
         self.assertFalse(h.directional_m5_alignment(bars,"SELL"))

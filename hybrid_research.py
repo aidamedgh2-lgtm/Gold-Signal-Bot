@@ -69,6 +69,16 @@ def directional_m5_alignment(m5, direction):
     return cur["close"] < prev["close"] and cur["close"] < cur["open"]
 
 
+def commit_trade(state, zone_key, trade):
+    """Consume a zone only after a valid trade has actually been created."""
+    if trade is None:
+        return False
+    state["seen"].add(zone_key)
+    state["trades"].append(trade)
+    state["last_exit"] = trade["exit_index"]
+    return True
+
+
 def replay(histories, cost_r, start_time, end_time):
     m5, m1 = histories["M5"], histories["M1"]
     m1_ends = [x["_end"] for x in m1]
@@ -150,12 +160,13 @@ def replay(histories, cost_r, start_time, end_time):
                 if result is None:
                     diag["invalid_trade_skips"] = diag.get("invalid_trade_skips",0)+1
                     continue
-                state["seen"].add(zone_key)
-                diag["signals"]+=1
-                state["trades"].append({"variant":name,"signal_time":entry_time,"direction":direction,
+                trade={"variant":name,"signal_time":entry_time,"direction":direction,
                     "zone_tf":best["tf"],"score":best["score"],"zone_low":best["low"],
-                    "zone_high":best["high"],"confirmation":note,"entry":entry,"stop":best["stop"],**result})
-                state["last_exit"]=result["exit_index"]
+                    "zone_high":best["high"],"confirmation":note,"entry":entry,"stop":best["stop"],**result}
+                if not commit_trade(state,zone_key,trade):
+                    diag["invalid_trade_skips"] = diag.get("invalid_trade_skips",0)+1
+                    continue
+                diag["signals"]+=1
                 break
     return variants
 
@@ -234,9 +245,17 @@ def main():
     baseline=baseline_by_threshold["9"]
     split_time=common_start+(common_end-common_start)*0.70
     def split_trades(trades):
-        inside=[t for t in trades if bt.parse_time(t["signal_time"]) < split_time]
-        outside=[t for t in trades if bt.parse_time(t["signal_time"]) >= split_time]
-        return inside,outside
+        inside=[]; outside=[]; boundary=[]
+        for trade in trades:
+            signal=bt.parse_time(trade["signal_time"])
+            exit_time=bt.parse_time(trade["exit_time"])
+            if signal >= split_time:
+                outside.append(trade)
+            elif exit_time < split_time:
+                inside.append(trade)
+            else:
+                boundary.append(trade)
+        return inside,outside,boundary
     OUT.mkdir(exist_ok=True)
     report={
         "purpose":"Research only; neither hybrid variant changes the live bot.",
@@ -261,11 +280,11 @@ def main():
     }
     for name,state in variants.items():
         trades=state["trades"]
-        split=int(len(trades)*0.7)
-        in_sample,out_sample=split_trades(trades)
+        in_sample,out_sample,boundary=split_trades(trades)
         report["variants"][name]={"diagnostics":state["diagnostics"],"all":bt.summarize(trades),
             "in_sample_first_70pct_calendar":bt.summarize(in_sample),
-            "out_of_sample_last_30pct_calendar":bt.summarize(out_sample),"trades":trades}
+            "out_of_sample_last_30pct_calendar":bt.summarize(out_sample),
+            "boundary_crossing_trades_excluded_from_split_metrics":len(boundary),"trades":trades}
         with (OUT/f"{name}.csv").open("w",newline="",encoding="utf-8") as f:
             if trades:
                 writer=csv.DictWriter(f,fieldnames=list(trades[0]))

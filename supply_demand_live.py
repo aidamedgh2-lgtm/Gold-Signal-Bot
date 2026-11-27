@@ -192,6 +192,30 @@ def detect_zones(bars, tf):
     return result
 
 
+def apply_opposing_zone_rr(zone, all_zones):
+    """Score RR to the nearest opposing zone; no historical-extrema substitute."""
+    entry = (zone["low"] + zone["high"]) / 2
+    stop = zone["stop"]
+    risk = abs(entry - stop)
+    if risk <= 0:
+        zone.update({"target": None, "rr": 0.0, "rr_points": 0})
+        return zone
+    if zone["direction"] == "DEMAND":
+        targets = [x["low"] for x in all_zones
+                   if x is not zone and x["direction"] == "SUPPLY" and x["low"] > entry]
+        target = min(targets) if targets else None
+        reward = target - entry if target is not None else 0.0
+    else:
+        targets = [x["high"] for x in all_zones
+                   if x is not zone and x["direction"] == "DEMAND" and x["high"] < entry]
+        target = max(targets) if targets else None
+        reward = entry - target if target is not None else 0.0
+    rr = reward / risk if reward > 0 else 0.0
+    points = 2 if rr >= 3.0 else (1 if rr >= 2.0 else 0)
+    zone.update({"target": target, "rr": rr, "rr_points": points})
+    return zone
+
+
 def overlaps(a, b):
     gap = max(0.0, max(a["low"], b["low"]) - min(a["high"], b["high"]))
     tolerance = max((a["high"]-a["low"])*0.5,
@@ -323,6 +347,7 @@ def main():
             continue
         if z["direction"] == "SUPPLY" and price > z["high"]+0.15*z["atr"]:
             continue
+        apply_opposing_zone_rr(z, all_zones)
         matches = [x for x in all_zones if x is not z and x["direction"] == z["direction"]
                    and x["tf"] != z["tf"] and overlaps(z,x)
                    and max(x["low"]-price, 0, price-x["high"]) <= MAX_NEAR_ATR*x["atr"]

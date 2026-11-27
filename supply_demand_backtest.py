@@ -79,43 +79,98 @@ def deduplicate_bars(bars, label):
     return sorted(unique.values(), key=lambda x: x["_start"]), duplicates
 
 
-def fetch_history(interval, label, kind):
-    key = os.environ.get("TWELVEDATA_API_KEY", "").strip()
-    if not key:
-        raise RuntimeError("TWELVEDATA_API_KEY is missing.")
-    params = urllib.parse.urlencode({
-        "symbol": live.SYMBOL, "interval": interval, "outputsize": OUTPUTSIZE,
-        "timezone": "UTC", "apikey": key, "format": "JSON",
-    })
+LAST_API_REQUEST_AT = 0.0
+
+def page_cursor_before(oldest_start):
+    """Move the end_date cursor just before the oldest returned candle."""
+    return oldest_start - dt.timedelta(seconds=1)
+
+
+def _request_history_page(params, label):
+    global LAST_API_REQUEST_AT
     req = urllib.request.Request(
-        live.API + "?" + params, headers={"User-Agent": "Gold-SD-Historical-Research/1.0"})
-    # Twelve Data free tiers enforce request-rate limits. Retry 429 responses
-    # instead of aborting halfway through the six-timeframe download.
+        live.API + "?" + urllib.parse.urlencode(params),
+        headers={"User-Agent": "Gold-SD-Historical-Research/1.0"},
+    )
     payload = None
     for attempt in range(5):
+        elapsed = time.monotonic() - LAST_API_REQUEST_AT
+        if LAST_API_REQUEST_AT and elapsed < 8.1:
+            time.sleep(8.1 - elapsed)
         try:
             with urllib.request.urlopen(req, timeout=45) as response:
                 payload = json.loads(response.read().decode("utf-8"))
+            LAST_API_REQUEST_AT = time.monotonic()
             break
         except urllib.error.HTTPError as exc:
+            LAST_API_REQUEST_AT = time.monotonic()
             if exc.code != 429 or attempt == 4:
                 raise
             retry_after = exc.headers.get("Retry-After")
             try:
-                delay = max(5, int(retry_after)) if retry_after else 65
+                delay = max(8.1, float(retry_after)) if retry_after else 65
             except (TypeError, ValueError):
                 delay = 65
-            print(f"{label}: Twelve Data rate limit (HTTP 429); retrying in {delay}s "
-                  f"({attempt + 1}/4)")
+            print(f"{label}: Twelve Data rate limit (HTTP 429); retrying in {delay:.1f}s ({attempt + 1}/4)")
             time.sleep(delay)
     if payload is None:
         raise RuntimeError(f"{label}: Twelve Data returned no payload after rate-limit retries.")
     if "values" not in payload:
         raise RuntimeError(f"{label}: {payload.get('message') or payload}")
-    bars = []
-    invalid_rows = []
-    invalid_stamps = []
-    raw_values = payload["values"]
+    return payload["values"]
+
+
+def fetch_history(interval, label, kind):
+    """Fetch full higher-TF context and page M1/M5/M15 over a common window."""
+    key = os.environ.get("TWELVEDATA_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("TWELVEDATA_API_KEY is missing.")
+    page_size = min(5000, OUTPUTSIZE)
+    raw_values = []
+    if label in ("M1", "M5", "M15"):
+        history_days = int(os.environ.get("SD_INTRADAY_HISTORY_DAYS", "30"))
+        if not 1 <= history_days <= 365:
+            raise RuntimeError("SD_INTRADAY_HISTORY_DAYS must be between 1 and 365.")
+        lower_bound = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=history_days)
+        cursor = dt.datetime.now(dt.timezone.utc)
+        page_number = 0
+        while page_number < 100:
+            params = {"symbol": live.SYMBOL, "interval": interval, "outputsize": page_size,
+                      "timezone": "UTC", "apikey": key, "format": "JSON", "order": "desc",
+                      "end_date": cursor.strftime("%Y-%m-%d %H:%M:%S")}
+            page = _request_history_page(params, f"{label} page {page_number + 1}")
+            if not page:
+                break
+            raw_values.extend(page)
+            page_number += 1
+            stamps = []
+            for item in page:
+                try:
+                    stamps.append(parse_time(str(item["datetime"])))
+                except (KeyError, TypeError, ValueError):
+                    continue
+            if not stamps:
+                raise RuntimeError(f"{label}: page has no usable timestamps.")
+            oldest = min(stamps)
+            if oldest <= lower_bound or len(page) < page_size:
+                break
+            next_cursor = page_cursor_before(oldest)
+            if next_cursor >= cursor:
+                raise RuntimeError(f"{label}: pagination cursor did not move backwards.")
+            cursor = next_cursor
+        else:
+            raise RuntimeError(f"{label}: reached 100-page safety limit.")
+        raw_values = [item for item in raw_values
+                      if parse_time(str(item.get("datetime", "1970-01-01"))) >= lower_bound]
+        if not raw_values:
+            raise RuntimeError(f"{label}: no candles returned inside requested history window.")
+        print(f"{label}: downloaded {page_number} page(s) for {history_days} days.")
+    else:
+        params = {"symbol": live.SYMBOL, "interval": interval, "outputsize": page_size,
+                  "timezone": "UTC", "apikey": key, "format": "JSON", "order": "desc"}
+        raw_values = _request_history_page(params, label)
+
+    bars, invalid_rows, invalid_stamps = [], [], []
     for item in raw_values:
         stamp = str(item.get("datetime", "<missing timestamp>"))
         try:
@@ -128,47 +183,27 @@ def fetch_history(interval, label, kind):
                 invalid_stamps.append(stamp)
                 continue
             start = parse_time(stamp)
-            bar["_start"] = start
-            bar["_end"] = candle_end(start, kind)
+            bar["_start"], bar["_end"] = start, candle_end(start, kind)
             bars.append(bar)
         except (KeyError, TypeError, ValueError, OverflowError) as exc:
             invalid_rows.append(f"{stamp} ({type(exc).__name__}: {exc})")
             invalid_stamps.append(stamp)
-
-    # Historical provider data may contain a block of malformed legacy candles.
-    # Exclude those rows, but stop if more than 20% of the requested history is bad.
     invalid_fraction = len(invalid_rows) / max(1, len(raw_values))
-    max_invalid_fraction = 0.20
-    if invalid_fraction > max_invalid_fraction:
-        sample = "; ".join(invalid_rows[:5])
-        raise RuntimeError(
-            f"{label}: rejected {len(invalid_rows)}/{len(raw_values)} invalid OHLC rows "
-            f"(limit {max_invalid_fraction:.0%}); examples: {sample}"
-        )
+    if invalid_fraction > 0.20:
+        raise RuntimeError(f"{label}: rejected {len(invalid_rows)}/{len(raw_values)} invalid OHLC rows (limit 20%); examples: {'; '.join(invalid_rows[:5])}")
     if invalid_rows:
-        print(f"{label}: skipped {len(invalid_rows)}/{len(raw_values)} invalid provider "
-              f"OHLC row(s) ({invalid_fraction:.1%}); "
-              + "; ".join(invalid_rows[:3]))
+        print(f"{label}: skipped {len(invalid_rows)}/{len(raw_values)} invalid OHLC row(s) ({invalid_fraction:.1%}).")
     bars, duplicate_count = deduplicate_bars(bars, label)
-    if duplicate_count:
-        print(f"{label}: ignored {duplicate_count} exact duplicate OHLC rows")
     now = dt.datetime.now(dt.timezone.utc)
-    # Keep only fully closed candles; timestamps are treated as candle-open times.
-    bars = [b for b in bars if b["_end"] <= now]
+    bars = [bar for bar in bars if bar["_end"] <= now]
     if len(bars) < 35:
         raise RuntimeError(f"{label}: only {len(bars)} fully closed candles; need >=35.")
-    quality = {
-        "raw_rows": len(raw_values),
-        "invalid_rows_excluded": len(invalid_rows),
-        "invalid_fraction_pct": round(100 * invalid_fraction, 3),
-        "invalid_date_range": (
-            [min(invalid_stamps), max(invalid_stamps)] if invalid_stamps else None
-        ),
-        "exact_duplicate_rows_removed": duplicate_count,
-        "usable_closed_bars": len(bars),
-    }
+    quality = {"raw_rows": len(raw_values), "invalid_rows_excluded": len(invalid_rows),
+               "invalid_fraction_pct": round(100 * invalid_fraction, 3),
+               "invalid_date_range": [min(invalid_stamps), max(invalid_stamps)] if invalid_stamps else None,
+               "exact_duplicate_rows_removed": duplicate_count, "usable_closed_bars": len(bars),
+               "history_window_days": int(os.environ.get("SD_INTRADAY_HISTORY_DAYS", "30")) if label in ("M1", "M5", "M15") else None}
     return bars, quality
-
 
 def strip_internal(bars):
     return [{k: b[k] for k in ("time", "open", "high", "low", "close")} for b in bars]

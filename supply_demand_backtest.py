@@ -53,7 +53,8 @@ def candle_end(start, kind):
         return start.replace(year=year, month=month, day=1)
     delta = {"week": dt.timedelta(days=7), "day": dt.timedelta(days=1),
              "4h": dt.timedelta(hours=4), "hour": dt.timedelta(hours=1),
-             "15min": dt.timedelta(minutes=15)}[kind]
+             "15min": dt.timedelta(minutes=15), "5min": dt.timedelta(minutes=5),
+             "1min": dt.timedelta(minutes=1)}[kind]
     return start + delta
 
 

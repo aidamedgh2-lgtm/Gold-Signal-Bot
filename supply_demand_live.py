@@ -229,7 +229,10 @@ def main():
         if z["direction"] == "SUPPLY" and price > z["high"]+0.15*z["atr"]:
             continue
         matches = [x for x in all_zones if x is not z and x["direction"] == z["direction"]
-                   and x["tf"] != z["tf"] and overlaps(z,x)]
+                   and x["tf"] != z["tf"] and overlaps(z,x)
+                   and max(x["low"]-price, 0, price-x["high"]) <= MAX_NEAR_ATR*x["atr"]
+                   and not ((x["direction"] == "DEMAND" and price < x["low"]-0.15*x["atr"]) or
+                            (x["direction"] == "SUPPLY" and price > x["high"]+0.15*x["atr"]))]
         match_count = 1 + len({x["tf"] for x in matches})
         mtf_points = 2 if match_count >= 3 else (1 if match_count == 2 else 0)
         z["matches"] = sorted({x["tf"] for x in matches}, key=lambda t: tf_order.index(t))

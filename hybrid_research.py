@@ -126,10 +126,10 @@ def replay(histories, cost_r):
                     entry_time=m5_prefix[-1]["time"]
                     note=m5_confirm
                     if m1_mss and directional_m5_alignment(m5_prefix,direction):
-                        entry=m1_prefix[-1]["close"]
-                        entry_time=m1_prefix[-1]["time"]
-                        note+=" + M1 MSS entry refinement"
-                        diag["m1_refinements"]+=1
+                        # M1 is used as confluence only: M5 confirmation is not known
+                        # until the M5 candle closes, so an earlier M1 fill is not claimed.
+                        note+=" + M1 MSS confluence"
+                        diag["m1_confluence"]+=1
                 else:
                     # M1 MSS can replace the M5 candle pattern only if M5 direction agrees.
                     if not m1_mss or not directional_m5_alignment(m5_prefix,direction):

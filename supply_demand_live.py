@@ -56,6 +56,9 @@ def fetch(interval):
     bars = [{"time": x["datetime"], **{k: float(x[k]) for k in ("open","high","low","close")}}
             for x in payload["values"]]
     bars.sort(key=lambda x: x["time"])
+    timestamps = [bar["time"] for bar in bars]
+    if len(set(timestamps)) != len(timestamps):
+        raise RuntimeError(f"شموع مكررة في بيانات {interval}")
     # تجاهل الشمعة الأحدث لاحتمال عدم اكتمالها
     if len(bars) > 1:
         bars = bars[:-1]
@@ -80,6 +83,18 @@ def atr(bars, period=14):
     return value if value > 0 else None
 
 
+def departure_window(bars, end, window=5):
+    """Return a complete, fixed-size post-base window or None if not enough closed bars exist."""
+    if end < 0 or len(bars) - end < window:
+        return None
+    return bars[end:end + window]
+
+
+def base_duration_points(count):
+    """Reward a multi-candle base; a one-candle pause earns no duration point."""
+    return 1 if count >= 2 else 0
+
+
 def detect_zones(bars, tf):
     """اكتشاف قاعدة قصيرة تليها إزاحة سعرية؛ لا يستخدم بيانات مستقبلية بعد شمعة الانطلاق."""
     zones = []
@@ -87,7 +102,9 @@ def detect_zones(bars, tf):
     if not a:
         return zones
     start = max(BASE_MAX + 2, len(bars) - SCAN_BARS)
-    for end in range(start, len(bars) - 2):
+    # Require five complete, closed candles after the base. The same five bars
+    # are used for displacement, candle-body ratio, and revisit boundary.
+    for end in range(start, len(bars) - 4):
         for count in range(BASE_MIN, BASE_MAX + 1):
             s = end - count
             base = bars[s:end]
@@ -95,10 +112,10 @@ def detect_zones(bars, tf):
             base_range = max(x["high"] for x in base) - min(x["low"] for x in base)
             if base_range > max(0.9 * a, 0.0):
                 continue
-            departure = bars[end:min(end+6, len(bars))]
-            if len(departure) < 2:
+            departure = departure_window(bars, end, 5)
+            if departure is None:
                 continue
-            # قياس أقوى ابتعاد خلال أول خمس شمعات بعد القاعدة
+            # Measure displacement over exactly the same five post-base candles.
             up = max(x["close"] for x in departure) - base_mid
             down = base_mid - min(x["close"] for x in departure)
             direction = "DEMAND" if up >= down else "SUPPLY"
@@ -125,7 +142,7 @@ def detect_zones(bars, tf):
                 zhi = max(x["high"] for x in base)
             if zhi <= zlo:
                 continue
-            departure_end = min(end + 5, len(bars)-1)
+            departure_end = end + 4
             visits = 0
             was_inside = False
             for x in bars[departure_end+1:]:
@@ -134,7 +151,7 @@ def detect_zones(bars, tf):
                     visits += 1
                 was_inside = inside
             visit_points = 2 if visits == 0 else (1 if visits == 1 else 0)
-            duration_points = 1 if count <= 4 else 0
+            duration_points = base_duration_points(count)
             # سرعة الاقتراب: انتقال لا يقل عن 1 ATR خلال ثلاث شمعات قبل لمس المنطقة
             last = bars[-1]
             recent = bars[-4:-1]

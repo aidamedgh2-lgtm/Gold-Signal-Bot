@@ -43,6 +43,15 @@ def fetch_candles(interval, outputsize=260):
             "close": float(item["close"]),
         })
     candles.sort(key=lambda candle: candle["time"])
+    timestamps = [candle["time"] for candle in candles]
+    if len(set(timestamps)) != len(timestamps):
+        raise RuntimeError(f"Duplicate timestamps in {interval} data")
+    for candle in candles:
+        values = [candle[key] for key in ("open", "high", "low", "close")]
+        if not all(math.isfinite(value) for value in values):
+            raise RuntimeError(f"Non-finite OHLC value in {interval} data")
+        if candle["high"] < max(values) or candle["low"] > min(values):
+            raise RuntimeError(f"Invalid OHLC candle in {interval} data")
 
     # Exclude the newest bar because the provider may still be forming it.
     if len(candles) > 1:
@@ -186,7 +195,7 @@ def ict_candidate(candles, current_atr):
 
         # Find a recent three-candle Fair Value Gap formed after the sweep.
         fvg = None
-        for j in range(max(sweep_index + 1, len(recent) - 6), len(recent)):
+        for j in range(max(sweep_index + 3, len(recent) - 6), len(recent)):
             absolute_index = len(candles) - 12 + j
             if absolute_index < 2:
                 continue
@@ -226,7 +235,9 @@ def ict_candidate(candles, current_atr):
             ],
         })
 
-    return max(candidates, key=lambda x: x["score"]) if candidates else None
+    if len({x["direction"] for x in candidates}) > 1:
+        return None  # Reject simultaneous opposing setups.
+    return candidates[-1] if candidates else None
 
 
 def build_technical_candidate(direction, entry, atr_value, reasons):
@@ -343,21 +354,21 @@ def main():
             momentum = "محايد"
 
         report = (
-            "📊 التقرير اليومي — GOLD SIGNAL BOT\\n"
-            f"التاريخ: {today_utc} (UTC)\\n\\n"
-            "التحليل الفني: بيانات الأسعار والمؤشرات متاحة من Twelve Data\\n"
-            f"• H4: {h4_status}\\n"
-            f"• H1: {h1_status}\\n"
-            f"• M15: {m15_status}\\n"
-            f"• هيكل M15: {structure['label']}\\n"
-            f"• RSI(14): {last_rsi:.1f} — الزخم {momentum}\\n"
-            f"• EMA50 M15: {m15_ema50:.2f} | ATR(14): {last_atr:.2f}\\n"
-            f"• آخر إغلاق M15: {last['close']:.2f} (سعر مرجعي XAU/USD Spot)\\n\\n"
-            + (f"• Fibonacci M15: أقرب مستوى {fib['nearest_ratio']:.3f} عند {fib['nearest_price']:.2f} | المسافة {fib['distance']:.2f} | تقليدي قريب: {'نعم' if fib['classic_near'] else 'لا'} | 0.705 قريب: {'نعم' if fib['705_near'] else 'لا'}\\n" if fib.get('available') else '• Fibonacci M15: لا يوجد Swing واضح صالح للحساب\\n') +
-            "التحليل الأساسي: غير مدمج — لا توجد تغذية أخبار أو بيانات اقتصادية.\\n"
-            "التحليل الزمني: غير مدمج — لا يوجد نموذج مستقل لدورات/توقيت السوق.\\n"
-            "التحليل الموجي: غير مدمج — لم يتم احتساب موجات إليوت.\\n"
-            "Bookmap / Order Flow: غير متصل — لا تتوفر بيانات عمق السوق والأوامر.\\n\\n"
+            "📊 التقرير اليومي — GOLD SIGNAL BOT\n"
+            f"التاريخ: {today_utc} (UTC)\n\n"
+            "التحليل الفني: بيانات الأسعار والمؤشرات متاحة من Twelve Data\n"
+            f"• H4: {h4_status}\n"
+            f"• H1: {h1_status}\n"
+            f"• M15: {m15_status}\n"
+            f"• هيكل M15: {structure['label']}\n"
+            f"• RSI(14): {last_rsi:.1f} — الزخم {momentum}\n"
+            f"• EMA50 M15: {m15_ema50:.2f} | ATR(14): {last_atr:.2f}\n"
+            f"• آخر إغلاق M15: {last['close']:.2f} (سعر مرجعي XAU/USD Spot)\n\n"
+            + (f"• Fibonacci M15: أقرب مستوى {fib['nearest_ratio']:.3f} عند {fib['nearest_price']:.2f} | المسافة {fib['distance']:.2f} | تقليدي قريب: {'نعم' if fib['classic_near'] else 'لا'} | 0.705 قريب: {'نعم' if fib['705_near'] else 'لا'}\n" if fib.get('available') else '• Fibonacci M15: لا يوجد Swing واضح صالح للحساب\n') +
+            "التحليل الأساسي: غير مدمج — لا توجد تغذية أخبار أو بيانات اقتصادية.\n"
+            "التحليل الزمني: غير مدمج — لا يوجد نموذج مستقل لدورات/توقيت السوق.\n"
+            "التحليل الموجي: غير مدمج — لم يتم احتساب موجات إليوت.\n"
+            "Bookmap / Order Flow: غير متصل — لا تتوفر بيانات عمق السوق والأوامر.\n\n"
             "القرار: هذا تقرير حالة وليس إشارة تداول. لا تنفذي صفقة بناءً عليه."
         )
         telegram_send(report)
@@ -436,33 +447,33 @@ def main():
     ict_status = f"{ict['direction']} (درجة {ict['score']}/100)" if ict else "لا توجد فرصة مستوفية للشروط"
     technical_status = f"{technical['direction']} (درجة {technical['score']}/100)" if technical else "لا توجد فرصة مستوفية للشروط"
     zone_text = (
-        f"منطقة FVG: {selected['zone_low']:.2f} — {selected['zone_high']:.2f}\\n"
+        f"منطقة FVG: {selected['zone_low']:.2f} — {selected['zone_high']:.2f}\n"
         if "zone_low" in selected else ""
     )
 
     message = (
-        f"📈 تقرير فرصة تداول — {direction}\\n"
-        "الأداة: XAU/USD Spot (قد يختلف عن سعر HFM)\\n"
-        f"وقت شمعة M15 المغلقة: {candle_time} UTC\\n\\n"
-        "مقارنة الاستراتيجيات المستقلة:\\n"
-        f"• ICT: {ict_status}\\n"
-        f"• Technical: {technical_status}\\n"
-        f"الاستراتيجية المختارة: {selected['strategy']}\\n"
-        f"قوة الإعداد التقديرية: {selected['score']}/100 (ليست نسبة نجاح)\\n\\n"
-        "التحليل الفني العام:\\n"
-        f"• H4: {classify_trend(h4_trend)} | H1: {classify_trend(h1_trend)}\\n"
-        f"• هيكل M15: {structure['label']}\\n"
-        f"• EMA50: {m15_ema50:.2f} | RSI(14): {last_rsi:.1f} | ATR(14): {last_atr:.2f}\\n"
-        + (f"• Fibonacci: أقرب مستوى {fib['nearest_ratio']:.3f} عند {fib['nearest_price']:.2f} | المسافة {fib['distance']:.2f} | تقليدي قريب: {'نعم' if fib['classic_near'] else 'لا'} | 0.705 قريب: {'نعم' if fib['705_near'] else 'لا'}\\n" if fib.get('available') else '• Fibonacci: لا يوجد Swing واضح صالح للحساب\\n')
+        f"📈 تقرير فرصة تداول — {direction}\n"
+        "الأداة: XAU/USD Spot (قد يختلف عن سعر HFM)\n"
+        f"وقت شمعة M15 المغلقة: {candle_time} UTC\n\n"
+        "مقارنة الاستراتيجيات المستقلة:\n"
+        f"• ICT: {ict_status}\n"
+        f"• Technical: {technical_status}\n"
+        f"الاستراتيجية المختارة: {selected['strategy']}\n"
+        f"قوة الإعداد التقديرية: {selected['score']}/100 (ليست نسبة نجاح)\n\n"
+        "التحليل الفني العام:\n"
+        f"• H4: {classify_trend(h4_trend)} | H1: {classify_trend(h1_trend)}\n"
+        f"• هيكل M15: {structure['label']}\n"
+        f"• EMA50: {m15_ema50:.2f} | RSI(14): {last_rsi:.1f} | ATR(14): {last_atr:.2f}\n"
+        + (f"• Fibonacci: أقرب مستوى {fib['nearest_ratio']:.3f} عند {fib['nearest_price']:.2f} | المسافة {fib['distance']:.2f} | تقليدي قريب: {'نعم' if fib['classic_near'] else 'لا'} | 0.705 قريب: {'نعم' if fib['705_near'] else 'لا'}\n" if fib.get('available') else '• Fibonacci: لا يوجد Swing واضح صالح للحساب\n')
         + zone_text +
-        f"Entry: {entry:.2f}\\n"
-        f"SL: {stop:.2f}\\n"
-        f"TP1: {tp1:.2f} | R:R = 1:1.5\\n"
-        f"TP2: {tp2:.2f} | R:R = 1:2.5\\n"
-        f"TP3: {tp3:.2f} | R:R = 1:3.0\\n"
-        "أسباب الإعداد: " + "؛ ".join(selected["reasons"]) + "\\n"
-        "التحليل الأساسي والأخبار: غير مدمج.\\n"
-        "Bookmap / Order Flow: غير متاح؛ بيانات عمق السوق غير موصولة.\\n"
+        f"Entry: {entry:.2f}\n"
+        f"SL: {stop:.2f}\n"
+        f"TP1: {tp1:.2f} | R:R = 1:1.5\n"
+        f"TP2: {tp2:.2f} | R:R = 1:2.5\n"
+        f"TP3: {tp3:.2f} | R:R = 1:3.0\n"
+        "أسباب الإعداد: " + "؛ ".join(selected["reasons"]) + "\n"
+        "التحليل الأساسي والأخبار: غير مدمج.\n"
+        "Bookmap / Order Flow: غير متاح؛ بيانات عمق السوق غير موصولة.\n"
         "ملاحظة: ICT هنا نموذج آلي تقريبي مبني على OHLC، وليس تطبيقاً كاملاً لكل قواعد ICT. الإشارة غير مختبرة ربحياً؛ لا تنفذيها على حساب حقيقي."
     )
     telegram_send(message)

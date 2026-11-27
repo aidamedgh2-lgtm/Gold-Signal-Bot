@@ -1,4 +1,4 @@
-name: Gold 90-day forward paper test
+name: Gold legacy ICT forward paper test
 
 on:
   push:
@@ -22,29 +22,47 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - name: Checkout main source
+      - name: Check out current main code
         uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Load isolated test state branch
+
+      - name: Load isolated paper-test state
         run: |
           git fetch origin forward-test-data
-          git checkout -B forward-test-data origin/forward-test-data
-      - name: Run independent paper portfolios
+          if git cat-file -e origin/forward-test-data:forward_test_state_v2.json 2>/dev/null; then
+            git show origin/forward-test-data:forward_test_state_v2.json > forward_test_state_v2.json
+          fi
+
+      - name: Run current main version of the paper-test code
         env:
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
         run: python forward_test.py
-      - name: Persist test state on isolated branch
+
+      - name: Persist only the paper-test state on its isolated branch
         run: |
-          if [ -n "$(git status --porcelain forward_test_state.json)" ]; then
+          if [ ! -f forward_test_state_v2.json ]; then
+            echo "Expected forward_test_state_v2.json was not created."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/gold-forward-state"
+          cp forward_test_state_v2.json "$RUNNER_TEMP/gold-forward-state/forward_test_state_v2.json"
+          rm -f forward_test_state_v2.json
+          git fetch origin forward-test-data
+          git checkout -B forward-test-data origin/forward-test-data
+          cp "$RUNNER_TEMP/gold-forward-state/forward_test_state_v2.json" forward_test_state_v2.json
+          git add forward_test_state_v2.json
+          if ! git diff --cached --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add forward_test_state.json
-            git commit -m "Update 90-day forward paper test state"
-            git push origin forward-test-data
+            git commit -m "Update isolated forward paper test state"
+            git push origin HEAD:forward-test-data
+          else
+            echo "Paper-test state did not change."
           fi

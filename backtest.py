@@ -61,10 +61,19 @@ def fetch_m15(days=None, outputsize=5000):
             ).replace(tzinfo=timezone.utc)
             if stamp < start_time or stamp + timedelta(minutes=15) > now:
                 continue
-            collected[item["datetime"]] = {
-                "time": item["datetime"],
+            stamp_text = item["datetime"]
+            if stamp_text in collected:
+                raise RuntimeError(f"Duplicate M15 timestamp across API pages: {stamp_text}")
+            bar = {
+                "time": stamp_text,
                 **{key: float(item[key]) for key in ("open", "high", "low", "close")},
             }
+            values_ohlc = [bar[key] for key in ("open", "high", "low", "close")]
+            if not all(math.isfinite(value) for value in values_ohlc):
+                raise RuntimeError(f"Non-finite OHLC value at {stamp_text}")
+            if bar["high"] < max(values_ohlc) or bar["low"] > min(values_ohlc):
+                raise RuntimeError(f"Invalid OHLC candle at {stamp_text}")
+            collected[stamp_text] = bar
 
         oldest = min(
             datetime.strptime(item["datetime"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
@@ -160,11 +169,22 @@ def aggregate(bars, hours):
         groups.setdefault(bucket, []).append(b)
     result = []
     for bucket, group in groups.items():
-        if len(group) == hours * 4:
-            bucket_end = datetime.fromtimestamp((bucket + 1) * hours * 3600, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-            result.append({"time": bucket_end, "open": group[0]["open"],
-                           "high": max(x["high"] for x in group), "low": min(x["low"] for x in group),
-                           "close": group[-1]["close"]})
+        bucket_start = datetime.fromtimestamp(bucket * hours * 3600, tz=timezone.utc)
+        expected_times = [
+            bucket_start + timedelta(minutes=15 * offset)
+            for offset in range(hours * 4)
+        ]
+        actual_times = [
+            datetime.strptime(x["time"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            for x in group
+        ]
+        # Count alone is insufficient: reject buckets with missing bars or gaps.
+        if actual_times != expected_times:
+            continue
+        bucket_end = datetime.fromtimestamp((bucket + 1) * hours * 3600, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        result.append({"time": bucket_end, "open": group[0]["open"],
+                       "high": max(x["high"] for x in group), "low": min(x["low"] for x in group),
+                       "close": group[-1]["close"]})
     return result
 
 
@@ -243,18 +263,24 @@ def build_signals(m15):
         window = m15[window_start:i + 1]
         bull_sweep = next((j for j in range(len(window) - 1, -1, -1) if window[j]["low"] < swing_low and window[j]["close"] > swing_low), None)
         bear_sweep = next((j for j in range(len(window) - 1, -1, -1) if window[j]["high"] > swing_high and window[j]["close"] < swing_high), None)
-        direction, extreme = None, None
+        valid_ict_directions = []
         if bull_sweep is not None:
             sweep_abs = window_start + bull_sweep
             mss_level = max(x["high"] for x in prior[-8:])
             if any(x["close"] > mss_level for x in m15[sweep_abs + 1:i + 1]):
-                direction, extreme = "BUY", window[bull_sweep]["low"]
+                valid_ict_directions.append(("BUY", window[bull_sweep]["low"], sweep_abs))
         if bear_sweep is not None:
             sweep_abs = window_start + bear_sweep
             mss_level = min(x["low"] for x in prior[-8:])
-            if any(x["close"] < mss_level for x in m15[sweep_abs + 1:i + 1]) and direction is None:
-                direction, extreme = "SELL", window[bear_sweep]["high"]
-        if direction and i >= 2:
+            if any(x["close"] < mss_level for x in m15[sweep_abs + 1:i + 1]):
+                valid_ict_directions.append(("SELL", window[bear_sweep]["high"], sweep_abs))
+        # Conflicting bullish and bearish setups are rejected, never resolved by code order.
+        if len(valid_ict_directions) == 1:
+            direction, extreme, sweep_abs = valid_ict_directions[0]
+        else:
+            direction, extreme, sweep_abs = None, None, None
+        # All three FVG candles must form strictly after the liquidity-sweep candle.
+        if direction and i >= 2 and i - 2 > sweep_abs:
             first, third = m15[i - 2], m15[i]
             fvg = (first["high"], third["low"]) if direction == "BUY" and third["low"] > first["high"] else ((third["high"], first["low"]) if direction == "SELL" and third["high"] < first["low"] else None)
             if fvg:
@@ -306,38 +332,85 @@ def filter_signals_by_fibonacci(signals, bars, level_type):
             filtered[index] = signal
     return filtered
 
+def _resolve_exit(active, bar, age):
+    """Resolve OHLC exits conservatively; if SL and TP both touch, SL wins."""
+    direction, stop, risk = active["direction"], active["stop"], active["risk"]
+    target = active["entry"] + 2 * risk if direction == "BUY" else active["entry"] - 2 * risk
+    hit_stop = bar["low"] <= stop if direction == "BUY" else bar["high"] >= stop
+    hit_target = bar["high"] >= target if direction == "BUY" else bar["low"] <= target
+    if hit_stop:
+        return -1.0, "stop"
+    if hit_target:
+        return 2.0, "target"
+    if age >= 48:
+        result = ((bar["close"] - active["entry"]) / risk if direction == "BUY"
+                  else (active["entry"] - bar["close"]) / risk)
+        return result, "timeout"
+    return None
+
+
 def simulate(bars, signals, strategy):
     trades, active = [], None
+
+    def record(active_trade, bar, result_r, reason):
+        trades.append({
+            "strategy": strategy,
+            "signal_time": active_trade["signal_time"],
+            "entry_time": bars[active_trade["index"]]["time"],
+            "direction": active_trade["direction"],
+            "entry": active_trade["entry"],
+            "stop": active_trade["stop"],
+            "risk": active_trade["risk"],
+            "exit_time": bar["time"],
+            "r_multiple": result_r,
+            "exit_reason": reason,
+        })
+
     for i in range(1, len(bars)):
         bar = bars[i]
         had_open_trade_at_bar_start = active is not None
         if active:
-            direction, stop, risk = active["direction"], active["stop"], active["risk"]
-            target = active["entry"] + 2 * risk if direction == "BUY" else active["entry"] - 2 * risk
-            hit_stop = bar["low"] <= stop if direction == "BUY" else bar["high"] >= stop
-            hit_target = bar["high"] >= target if direction == "BUY" else bar["low"] <= target
-            if hit_stop or hit_target or i - active["index"] >= 48:
-                result_r = -1.0 if hit_stop else (2.0 if hit_target else ((bar["close"] - active["entry"]) / risk if direction == "BUY" else (active["entry"] - bar["close"]) / risk))
-                trades.append({"strategy": strategy, "signal_time": active["signal_time"], "entry_time": bars[active["index"]]["time"],
-                               "direction": direction, "entry": active["entry"], "stop": stop, "risk": risk,
-                               "exit_time": bar["time"], "r_multiple": result_r})
+            outcome = _resolve_exit(active, bar, i - active["index"])
+            if outcome is not None:
+                record(active, bar, outcome[0], outcome[1])
                 active = None
-        # Do not open a new trade on a candle that was used to exit an older trade.
-        if not had_open_trade_at_bar_start and active is None and i - 1 in signals:
-            signal = signals[i - 1]
-            entry = bar["open"]  # Enter only at the next candle open.
-            risk = abs(entry - signal["stop"])
-            if 0 < risk <= 4 * signal["risk"]:
-                active = {"index": i, "signal_time": bars[i - 1]["time"], "entry": entry,
-                          "direction": signal["direction"], "stop": signal["stop"], "risk": risk}
-    if active:
-        bar, risk = bars[-1], active["risk"]
-        result_r = (bar["close"] - active["entry"]) / risk if active["direction"] == "BUY" else (active["entry"] - bar["close"]) / risk
-        trades.append({"strategy": strategy, "signal_time": active["signal_time"], "entry_time": bars[active["index"]]["time"],
-                       "direction": active["direction"], "entry": active["entry"], "stop": active["stop"],
-                       "risk": risk, "exit_time": bar["time"], "r_multiple": result_r, "exit_reason": "end_of_data"})
-    return trades
 
+        # Do not open another trade on a candle that exited an older trade.
+        if had_open_trade_at_bar_start or active is not None or i - 1 not in signals:
+            continue
+
+        signal = signals[i - 1]
+        entry = bar["open"]
+        direction, stop = signal["direction"], signal["stop"]
+        # A gap through the stop invalidates the setup; abs(entry-stop) is not enough.
+        if (direction == "BUY" and entry <= stop) or (direction == "SELL" and entry >= stop):
+            continue
+        risk = abs(entry - stop)
+        if not (0 < risk <= 4 * signal["risk"]):
+            continue
+
+        active = {
+            "index": i,
+            "signal_time": bars[i - 1]["time"],
+            "entry": entry,
+            "direction": direction,
+            "stop": stop,
+            "risk": risk,
+        }
+
+        # The entry candle itself can hit SL or TP; it must be simulated immediately.
+        outcome = _resolve_exit(active, bar, 0)
+        if outcome is not None:
+            record(active, bar, outcome[0], outcome[1])
+            active = None
+
+    if active:
+        bar = bars[-1]
+        result_r = ((bar["close"] - active["entry"]) / active["risk"]
+                    if active["direction"] == "BUY"
+                    else (active["entry"] - bar["close"]) / active["risk"])
+        record(active, bar, result_r, "end_of_data")
+    return trades
 
 def metrics(trades):
     returns = [x["r_multiple"] for x in trades]

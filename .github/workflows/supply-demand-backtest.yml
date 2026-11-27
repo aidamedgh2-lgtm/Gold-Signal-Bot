@@ -9,6 +9,9 @@ on:
       - 'supply_demand_live.py'
       - 'tests/**'
       - '.github/workflows/supply-demand-backtest.yml'
+  pull_request:
+    branches:
+      - audit/fixes-2026-11-27
   workflow_dispatch:
     inputs:
       outputsize:

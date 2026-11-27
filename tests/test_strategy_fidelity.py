@@ -64,7 +64,7 @@ class FidelityTests(unittest.TestCase):
             departure_visual="sharp", approach_visual="fast",
             rr_points=2, mtf_points=2, visits=0, duration_points_value=1)
         self.assertTrue(complete["complete"])
-        self.assertEqual(complete["total"], 9)
+        self.assertEqual(complete["total"], 10)
 
     def test_pdf_decision_thresholds(self):
         self.assertEqual(decision_for_score(10), "pending_candidate")

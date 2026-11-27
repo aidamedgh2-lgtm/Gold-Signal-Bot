@@ -45,7 +45,7 @@ class StrategyFidelityTests(unittest.TestCase):
     def test_rr_requires_a_real_opposing_zone(self):
         rr, points = rr_from_zone(self.zone, None, 99)
         self.assertEqual((rr, points), (0.0, 0))
-        rr, points = rr_from_zone(self.zone, 106, 99)
+        rr, points = rr_from_zone(self.zone, 105, 99)
         self.assertAlmostEqual(rr, 2.0)
         self.assertEqual(points, 1)
 

@@ -6,6 +6,7 @@ on:
       - repair/original-strategy-fidelity-v1
     paths:
       - "strategy_fidelity.py"
+      - "supply_demand_live.py"
       - "tests/test_strategy_fidelity.py"
       - ".github/workflows/strategy-fidelity-tests.yml"
   pull_request:

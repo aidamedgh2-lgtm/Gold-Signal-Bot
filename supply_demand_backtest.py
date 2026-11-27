@@ -45,6 +45,27 @@ def candle_end(start, kind):
     return start + delta
 
 
+def deduplicate_bars(bars, label):
+    """Remove only byte-for-byte equivalent OHLC duplicates; reject conflicting rows."""
+    unique = {}
+    duplicates = 0
+    for bar in bars:
+        stamp = bar["time"]
+        values = tuple(bar[field] for field in ("open", "high", "low", "close"))
+        if stamp in unique:
+            previous = tuple(unique[stamp][field]
+                             for field in ("open", "high", "low", "close"))
+            if values != previous:
+                raise RuntimeError(
+                    f"{label}: conflicting duplicate timestamp {stamp}; "
+                    "refusing to choose between different OHLC candles."
+                )
+            duplicates += 1
+            continue
+        unique[stamp] = bar
+    return sorted(unique.values(), key=lambda x: x["_start"]), duplicates
+
+
 def fetch_history(interval, label, kind):
     key = os.environ.get("TWELVEDATA_API_KEY", "").strip()
     if not key:
@@ -60,12 +81,8 @@ def fetch_history(interval, label, kind):
     if "values" not in payload:
         raise RuntimeError(f"{label}: {payload.get('message') or payload}")
     bars = []
-    seen = set()
     for item in payload["values"]:
         stamp = str(item["datetime"])
-        if stamp in seen:
-            raise RuntimeError(f"{label}: duplicate timestamp {stamp}")
-        seen.add(stamp)
         bar = {"time": stamp}
         for field in ("open", "high", "low", "close"):
             bar[field] = float(item[field])
@@ -78,7 +95,9 @@ def fetch_history(interval, label, kind):
         bar["_start"] = start
         bar["_end"] = candle_end(start, kind)
         bars.append(bar)
-    bars.sort(key=lambda x: x["_start"])
+    bars, duplicate_count = deduplicate_bars(bars, label)
+    if duplicate_count:
+        print(f"{label}: ignored {duplicate_count} exact duplicate OHLC rows")
     now = dt.datetime.now(dt.timezone.utc)
     # Keep only fully closed candles; timestamps are treated as candle-open times.
     bars = [b for b in bars if b["_end"] <= now]

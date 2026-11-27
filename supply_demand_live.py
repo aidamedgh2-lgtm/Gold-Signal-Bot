@@ -268,7 +268,8 @@ def main():
 
     # AI vision reviews only chart-visible departure and approach geometry.
     # It does not decide direction, levels, score, or whether a trade is valid.
-    ranked = sorted(all_zones, key=lambda z: (z["tf"], z["created"]), reverse=True)
+    tf_order = [x[1] for x in TIMEFRAMES]
+    ranked = sorted(all_zones, key=lambda z: (tf_order.index(z["tf"]), z["created"]))
     review_lines = []
     for zone in ranked[:3]:
         label = f'{zone["tf"]} {zone["direction"]}: {zone["low"]:.2f}–{zone["high"]:.2f}'
@@ -282,8 +283,10 @@ def main():
             confidence_pct = round(visual["confidence"] * 100)
             review_lines.append(
                 label + f' — الانطلاق: {visual["departure"]}؛ '
-                f'الاقتراب: {visual["approach"]}؛ ثقة النموذج: {confidence_pct}%'
-                + f'؛ ملاحظة: {visual["evidence"]}'
+                f'الاقتراب: {visual["approach"]}؛ وضوح المنطقة: {visual["zone_readability"]}؛ '
+                f'ثقة النموذج: {confidence_pct}%'
+                + f'؛ الدليل: {visual["evidence"]}'
+                + (f'؛ سبب عدم الحسم: {visual["unknown_reason"]}' if visual["unknown_reason"] else "")
             )
         except Exception as exc:
             # Fail closed: an API/model/chart error must never create a score.
@@ -292,7 +295,8 @@ def main():
     send(
         "👁️ مراجعة بصرية بالذكاء الاصطناعي — XAU/USD\n"
         + "\n".join(review_lines)
-        + "\nهذه نتائج تصنيف بصري أولي فقط. لم تُحسب علامة /10 ولم تصدر صفقة؛ "
+        + "\nالمرجع STRATEGY_REFERENCE.md أُرسل إلى نموذج الرؤية مع كل صورة. "
+          "هذه ملاحظات بصرية أولية فقط. لم تُحسب علامة /10 ولم تصدر صفقة؛ "
           "بقية معايير PDF (التوافق الهرمي، الزيارات، المدة، R:R والهدف) "
           "ما زالت تحتاج ربطاً واختباراً حرفياً. لا يوجد تنفيذ أوامر."
     )

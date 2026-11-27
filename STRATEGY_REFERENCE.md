@@ -1,0 +1,1 @@
+Drafting PDF-derived strategy reference.

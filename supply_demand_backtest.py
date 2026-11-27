@@ -58,16 +58,29 @@ def fetch(interval, label):
         payload = json.loads(response.read().decode("utf-8"))
     if "values" not in payload:
         raise RuntimeError(f"Twelve Data {label}: {payload.get('message') or payload}")
-    rows = []
+    rows, invalid = [], []
     for item in payload["values"]:
-        bar = {"time": item["datetime"]}
-        for key in ("open", "high", "low", "close"):
-            bar[key] = float(item[key])
-        if not all(math.isfinite(bar[k]) for k in ("open", "high", "low", "close")):
-            raise RuntimeError(f"Invalid OHLC value in {label}")
-        if bar["high"] < max(bar["open"], bar["close"], bar["low"]) or bar["low"] > min(bar["open"], bar["close"], bar["high"]):
-            raise RuntimeError(f"Invalid OHLC ordering in {label}")
-        rows.append(bar)
+        try:
+            bar = {"time": item["datetime"]}
+            for key in ("open", "high", "low", "close"):
+                bar[key] = float(item[key])
+            valid = all(math.isfinite(bar[k]) for k in ("open", "high", "low", "close"))
+            valid = valid and bar["high"] >= max(bar["open"], bar["close"], bar["low"])
+            valid = valid and bar["low"] <= min(bar["open"], bar["close"], bar["high"])
+            if not valid:
+                invalid.append({k: bar.get(k) for k in ("time", "open", "high", "low", "close")})
+                continue
+            rows.append(bar)
+        except (KeyError, TypeError, ValueError) as exc:
+            invalid.append({"time": item.get("datetime"), "error": str(exc)})
+    allowed_invalid = max(2, int(len(payload["values"]) * 0.005))
+    if len(invalid) > allowed_invalid:
+        raise RuntimeError(
+            f"{label}: rejected {len(invalid)} invalid OHLC rows "
+            f"(allowed {allowed_invalid}); samples={invalid[:3]}"
+        )
+    if invalid:
+        print(f"WARNING {label}: excluded {len(invalid)} invalid provider rows; samples={invalid[:3]}")
     rows.sort(key=lambda x: x["time"])
     # Match live engine policy: discard newest potentially unfinished candle.
     if rows:

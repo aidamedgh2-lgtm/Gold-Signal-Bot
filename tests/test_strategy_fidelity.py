@@ -38,6 +38,8 @@ class FidelityTests(unittest.TestCase):
         bars = [bar(20, 21), bar(9, 10), bar(9.5, 10.5), bar(20, 21),
                 bar(9, 10), bar(20, 21), bar(9, 10)]
         self.assertEqual(count_zone_visits(bars, 9, 10, 0), 3)
+        with self.assertRaises(ValueError):
+            visit_points(0)
         self.assertEqual(visit_points(1), 2)
         self.assertEqual(visit_points(2), 1)
         self.assertEqual(visit_points(3), 0)

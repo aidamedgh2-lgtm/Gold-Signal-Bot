@@ -393,35 +393,22 @@ def main():
                  + score_lines + 'لا توجد صفقة. ننتظر تحسن المنطقة/تأكيد الدخول.\n' + comex_note)
             seen[zone_id] = "monitor"
     else:
-        confirm = confirmation(m15, best)
-        # شمعة التأكيد M15 مطلوبة بعد أن يلمس السعر المنطقة.
-        if confirm:
-            entry = m15[-1]["close"]
-            stop = best["stop"]
-            risk = abs(entry-stop)
-            if risk <= 0:
-                print("مخاطرة غير صالحة؛ لا إشارة.")
-                return
-            tp1 = entry + (1.5*risk if best["direction"] == "DEMAND" else -1.5*risk)
-            tp2 = entry + (2.5*risk if best["direction"] == "DEMAND" else -2.5*risk)
-            tp3 = entry + (3.0*risk if best["direction"] == "DEMAND" else -3.0*risk)
-            direction = "BUY" if best["direction"] == "DEMAND" else "SELL"
-            signal_key = zone_id + ":" + m15[-1]["time"]
-            if seen.get(zone_id) != "signal" and state.get("last_signal_key") != signal_key:
-                send(f'🚨 توصية {direction} — XAU/USD\nالاستراتيجية: Supply & Demand\n'
-                     f'المنطقة: {best["low"]:.2f} – {best["high"]:.2f} ({best["tf"]})\n'
-                     f'شمعة التأكيد: {confirm} على M15\nالتقييم: {best["score"]}/10\n'
-                     + score_lines +
-                     f'Entry: {entry:.2f}\nSL: {stop:.2f}\nTP1: {tp1:.2f}\n'
-                     f'TP2: {tp2:.2f}\nTP3: {tp3:.2f}\n'
-                     + comex_note + '\nالدخول بعد إغلاق شمعة التأكيد؛ هذه إشارة تنبيه وليست أمراً منفذاً.')
-                seen[zone_id] = "signal"
-                state["last_signal_key"] = signal_key
-        elif seen.get(zone_id) not in ("strong_wait", "signal"):
-            send(f'⭐ منطقة قوية — XAU/USD\nالفريم: {best["tf"]}\n'
-                 f'المنطقة: {best["low"]:.2f} – {best["high"]:.2f}\nالتقييم: {best["score"]}/10\n'
-                 + score_lines + 'انتظار وصول السعر إلى المنطقة ثم شمعة تأكيد M15. لا دخول الآن.\n' + comex_note)
-            seen[zone_id] = "strong_wait"
+        target = best.get("target")
+        if target is None:
+            print("لا توجد منطقة مقابلة صالحة لتحديد الهدف؛ لا تنبيه أمر معلّق.")
+            return
+        direction = "BUY" if best["direction"] == "DEMAND" else "SELL"
+        if seen.get(zone_id) != "pending_candidate":
+            send(f'📌 فرصة مؤهلة لأمر معلّق مقترح — {direction} XAU/USD\n'
+                 f'المنطقة: {best["low"]:.2f} – {best["high"]:.2f} ({best["tf"]})\n'
+                 f'التقييم: {best["score"]}/10\n' + score_lines +
+                 f'نطاق الدخول المقترح: {best["low"]:.2f} – {best["high"]:.2f}\n'
+                 f'SL: {best["stop"]:.2f}\n'
+                 f'الهدف: المنطقة المقابلة عند {target:.2f}\n'
+                 f'R:R المحسوب: 1:{best["rr"]:.2f}\n'
+                 + comex_note +
+                 '\nتنبيه فقط؛ البوت لا يرسل أوامر إلى الوسيط. اختاري سعر الأمر داخل المنطقة وفق قواعد التنفيذ لديك.')
+            seen[zone_id] = "pending_candidate"
     state["sd_seen"] = seen
     STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f'Supply/Demand scan complete. Best zone score={best["score"]}/10, timeframe={best["tf"]}.')

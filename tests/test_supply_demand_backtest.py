@@ -4,6 +4,21 @@ import supply_demand_backtest as bt
 
 
 class SupplyDemandBacktestTests(unittest.TestCase):
+    def test_valid_ohlc_accepts_consistent_positive_candle(self):
+        self.assertTrue(bt.valid_ohlc({
+            "open": 2000.0, "high": 2010.0, "low": 1990.0, "close": 2005.0
+        }))
+
+    def test_valid_ohlc_rejects_inconsistent_candle(self):
+        self.assertFalse(bt.valid_ohlc({
+            "open": 2000.0, "high": 1990.0, "low": 1980.0, "close": 2005.0
+        }))
+
+    def test_valid_ohlc_rejects_non_positive_price(self):
+        self.assertFalse(bt.valid_ohlc({
+            "open": 0.0, "high": 2010.0, "low": 1990.0, "close": 2005.0
+        }))
+
     def test_month_end_is_next_month_start(self):
         start = bt.parse_time("2026-01-01 00:00:00")
         self.assertEqual(bt.candle_end(start, "month").isoformat(),

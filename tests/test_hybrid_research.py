@@ -27,6 +27,22 @@ class HybridResearchTests(unittest.TestCase):
         self.assertEqual(values[14],h.build_atr_series(changed,14)[14])
 
 
+    def test_zone_is_not_consumed_when_trade_cannot_be_created(self):
+        state={"seen":set(),"trades":[],"last_exit":-1}
+        key=("H1","DEMAND",2300.0,2305.0,"2026-11-27")
+        self.assertFalse(h.commit_trade(state,key,None))
+        self.assertNotIn(key,state["seen"])
+        self.assertEqual(state["trades"],[])
+
+    def test_zone_is_consumed_only_after_valid_trade_is_created(self):
+        state={"seen":set(),"trades":[],"last_exit":-1}
+        key=("H1","DEMAND",2300.0,2305.0,"2026-11-27")
+        trade={"exit_index":42,"net_r":1.2}
+        self.assertTrue(h.commit_trade(state,key,trade))
+        self.assertIn(key,state["seen"])
+        self.assertEqual(state["trades"],[trade])
+        self.assertEqual(state["last_exit"],42)
+
     def test_m5_candle_end_is_five_minutes(self):
         import supply_demand_backtest as bt
         start=bt.parse_time("2026-11-27 10:00:00")

@@ -220,6 +220,7 @@ def score_candidates(all_zones, price):
             continue
         if zone["direction"] == "SUPPLY" and price > zone["high"] + 0.15 * zone["atr"]:
             continue
+        live.apply_opposing_zone_rr(zone, all_zones)
         matches = [
             other for other in all_zones
             if other is not zone and other["direction"] == zone["direction"]

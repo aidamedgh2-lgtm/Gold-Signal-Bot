@@ -36,6 +36,9 @@ class DetectorSafetyGateTests(unittest.TestCase):
         main_source = source[source.index("def main():"):]
         self.assertIn("لم تُحسب نقاط الاستراتيجية /10", main_source)
         self.assertIn("لا يوجد تنفيذ صفقات", main_source)
+        self.assertIn('visual["departure"] == item["departure"]', main_source)
+        self.assertIn('visual["zone_readability"] == "clear"', main_source)
+        self.assertIn("UNRESOLVED — NO SIGNAL", main_source)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ import math
 import os
 import urllib.parse
 import urllib.request
+import time
 from pathlib import Path
 
 import supply_demand_live as engine
@@ -122,7 +123,10 @@ def main():
     OUTPUT.mkdir(exist_ok=True)
     data = {}
     units = {}
-    for interval, label, unit in TIMEFRAMES:
+    for index, (interval, label, unit) in enumerate(TIMEFRAMES):
+        if index:
+            print("Rate-limit pacing: waiting 12 seconds before next provider request.")
+            time.sleep(12)
         data[label] = fetch(interval, label)
         units[label] = unit
 

@@ -1,4 +1,7 @@
 {
   "last_signal_candle": null,
-  "direction": null
+  "direction": null,
+  "sd_seen": {
+    "H1:DEMAND:3627.13:3632.91:2026-11-27 04:00:00": "monitor"
+  }
 }

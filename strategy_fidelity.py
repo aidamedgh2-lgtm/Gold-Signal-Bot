@@ -101,6 +101,8 @@ def duration_points_by_timeframe(d1_bars: Sequence[Mapping[str, float]],
                                  h4_bars: Sequence[Mapping[str, float]],
                                  zone_low: float, zone_high: float) -> dict:
     """Return a score only when D1 and H4 agree; expose both counts."""
+    if not d1_bars or not h4_bars:
+        return {"score": None, "d1_count": None, "h4_count": None}
     d1_score, d1_count = duration_points(d1_bars, zone_low, zone_high)
     h4_score, h4_count = duration_points(h4_bars, zone_low, zone_high)
     return {"score": d1_score if d1_score == h4_score else None,

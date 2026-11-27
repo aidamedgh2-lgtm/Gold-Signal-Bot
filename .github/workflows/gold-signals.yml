@@ -115,7 +115,7 @@ jobs:
           page_count = 0
           next_cursor = None
           while page_count < 10:
-              page_params = dict(params)
+              page_params = params
               if next_cursor:
                   page_params += "&" + urllib.parse.urlencode({"cursor": next_cursor})
               page_req = urllib.request.Request(

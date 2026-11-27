@@ -47,6 +47,36 @@ class HistoricalBacktestExecutionTests(unittest.TestCase):
         self.assertEqual(trades[0]["r_multiple"], -1.0)
         self.assertEqual(trades[0]["exit_reason"], "stop")
 
+
+    def test_entry_candle_target_is_counted(self):
+        bars = [
+            candle("2026-11-27 12:00:00", 100, 101, 99.5, 100),
+            candle("2026-11-27 12:15:00", 100, 102.5, 99.5, 102),
+        ]
+        trades = backtest.simulate(bars, self.signal, "test")
+        self.assertEqual(len(trades), 1)
+        self.assertEqual(trades[0]["r_multiple"], 2.0)
+        self.assertEqual(trades[0]["exit_reason"], "target")
+
+    def test_gap_through_sell_stop_rejects_entry(self):
+        bars = [
+            candle("2026-11-27 12:00:00", 100, 100.5, 99.5, 100),
+            candle("2026-11-27 12:15:00", 102, 102.5, 101.5, 102),
+        ]
+        signal = {0: {"direction": "SELL", "stop": 101.0, "risk": 1.0}}
+        self.assertEqual(backtest.simulate(bars, signal, "test"), [])
+
+    def test_higher_timeframe_aggregation_requires_complete_bucket(self):
+        complete = [
+            candle("2026-11-27 12:00:00", 100, 101, 99, 100),
+            candle("2026-11-27 12:15:00", 100, 102, 99, 101),
+            candle("2026-11-27 12:30:00", 101, 103, 100, 102),
+            candle("2026-11-27 12:45:00", 102, 104, 101, 103),
+        ]
+        self.assertEqual(len(backtest.aggregate(complete, 1)), 1)
+        incomplete = complete[:2] + complete[3:]
+        self.assertEqual(backtest.aggregate(incomplete, 1), [])
+
     def test_gap_through_buy_stop_rejects_entry(self):
         bars = [
             candle("2026-11-27 12:00:00", 100, 101, 99.5, 100),

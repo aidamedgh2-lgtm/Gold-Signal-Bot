@@ -21,6 +21,11 @@ represented by OHLC/ATR proxies and therefore are **not yet proven faithful**
 to the PDF. This branch is a structural cleanup, not a claim of a validated
 profitable strategy.
 
+## PDF-grounded AI review and compliance gate
+
+- `AI_AUDIT_CONTRACT.md` is the mandatory instruction set for any AI code/strategy audit. It makes the original PDF the sole authority, prohibits strategy drift and unsupported heuristics, requires evidence for every finding, and blocks claims of full compliance when source or chart evidence is missing.
+- AI audit findings must distinguish source fidelity, software correctness, and trading performance. Unknown source rules remain unresolved; they must never be filled by model assumptions.
+
 ## PDF-grounded AI vision review
 
 - `STRATEGY_REFERENCE.md` is derived from the original 143-page PDF and is

@@ -79,7 +79,7 @@ def replay(histories, cost_r):
     variants = {
         "A_M5_required_M1_entry_refinement": {
             "trades":[], "seen":set(), "last_exit":-1,
-            "diagnostics":{"setups":0,"m5_confirmations":0,"m1_refinements":0,"signals":0}},
+            "diagnostics":{"setups":0,"m5_confirmations":0,"m1_confluence":0,"signals":0}},
         "B_M1_MSS_alternative_with_M5_alignment": {
             "trades":[], "seen":set(), "last_exit":-1,
             "diagnostics":{"setups":0,"m5_confirmations":0,"m1_mss_signals":0,"signals":0}},
@@ -214,7 +214,7 @@ def main():
         "data_source":"Twelve Data XAU/USD OHLC; not HFM bid/ask execution data.",
         "decision_time":"M5 candle close; only fully closed M1/M5 and higher-timeframe candles are used.",
         "opportunity_discovery":"Original Supply/Demand zones and scoring; score >=7 monitored setups are passed to independent confirmation gates.",
-        "variant_A":"M5 confirmation mandatory; M1 MSS can refine entry timing but cannot create a signal.",
+        "variant_A":"M5 confirmation mandatory; M1 MSS adds microstructure confluence but cannot create a signal or claim an earlier fill.",
         "variant_B":"M1 MSS can replace M5 candle pattern only when M5 direction agrees.",
         "quality_gate":"M5 ATR regime rejects volatility spikes above 2.5x trailing median ATR; no volume confirmation because source lacks reliable spot-gold volume.",
         "cost_model":f"{cost:.4f}R fixed cost deduction per trade; proxy, not measured HFM spread/slippage.",

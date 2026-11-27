@@ -57,7 +57,7 @@ jobs:
                       f"{payload.get('message') or payload}"
                   )
 
-              values = payload["values"]
+              values = sorted(payload["values"], key=lambda row: row["datetime"])
               if len(values) < 100:
                   raise SystemExit(
                       f"{interval}: only {len(values)} candles returned; "
@@ -68,8 +68,8 @@ jobs:
               print("Symbol:", (payload.get("meta") or {}).get("symbol", "not specified"))
               print("Interval:", (payload.get("meta") or {}).get("interval", interval))
               print("Candles returned:", len(values))
-              print("Newest candle:", values[0].get("datetime"))
-              print("Oldest candle:", values[-1].get("datetime"))
+              print("Oldest candle:", values[0].get("datetime"))
+              print("Newest candle:", values[-1].get("datetime"))
               print("OHLC fields present:", all(
                   all(k in row for k in ("open", "high", "low", "close"))
                   for row in values

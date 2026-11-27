@@ -61,10 +61,19 @@ def fetch_m15(days=None, outputsize=5000):
             ).replace(tzinfo=timezone.utc)
             if stamp < start_time or stamp + timedelta(minutes=15) > now:
                 continue
-            collected[item["datetime"]] = {
-                "time": item["datetime"],
+            stamp_text = item["datetime"]
+            if stamp_text in collected:
+                raise RuntimeError(f"Duplicate M15 timestamp across API pages: {stamp_text}")
+            bar = {
+                "time": stamp_text,
                 **{key: float(item[key]) for key in ("open", "high", "low", "close")},
             }
+            values_ohlc = [bar[key] for key in ("open", "high", "low", "close")]
+            if not all(math.isfinite(value) for value in values_ohlc):
+                raise RuntimeError(f"Non-finite OHLC value at {stamp_text}")
+            if bar["high"] < max(values_ohlc) or bar["low"] > min(values_ohlc):
+                raise RuntimeError(f"Invalid OHLC candle at {stamp_text}")
+            collected[stamp_text] = bar
 
         oldest = min(
             datetime.strptime(item["datetime"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
@@ -160,11 +169,22 @@ def aggregate(bars, hours):
         groups.setdefault(bucket, []).append(b)
     result = []
     for bucket, group in groups.items():
-        if len(group) == hours * 4:
-            bucket_end = datetime.fromtimestamp((bucket + 1) * hours * 3600, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-            result.append({"time": bucket_end, "open": group[0]["open"],
-                           "high": max(x["high"] for x in group), "low": min(x["low"] for x in group),
-                           "close": group[-1]["close"]})
+        bucket_start = datetime.fromtimestamp(bucket * hours * 3600, tz=timezone.utc)
+        expected_times = [
+            bucket_start + timedelta(minutes=15 * offset)
+            for offset in range(hours * 4)
+        ]
+        actual_times = [
+            datetime.strptime(x["time"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            for x in group
+        ]
+        # Count alone is insufficient: reject buckets with missing bars or gaps.
+        if actual_times != expected_times:
+            continue
+        bucket_end = datetime.fromtimestamp((bucket + 1) * hours * 3600, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        result.append({"time": bucket_end, "open": group[0]["open"],
+                       "high": max(x["high"] for x in group), "low": min(x["low"] for x in group),
+                       "close": group[-1]["close"]})
     return result
 
 

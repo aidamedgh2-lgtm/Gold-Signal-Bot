@@ -43,6 +43,15 @@ def fetch_candles(interval, outputsize=260):
             "close": float(item["close"]),
         })
     candles.sort(key=lambda candle: candle["time"])
+    timestamps = [candle["time"] for candle in candles]
+    if len(set(timestamps)) != len(timestamps):
+        raise RuntimeError(f"Duplicate timestamps in {interval} data")
+    for candle in candles:
+        values = [candle[key] for key in ("open", "high", "low", "close")]
+        if not all(math.isfinite(value) for value in values):
+            raise RuntimeError(f"Non-finite OHLC value in {interval} data")
+        if candle["high"] < max(values) or candle["low"] > min(values):
+            raise RuntimeError(f"Invalid OHLC candle in {interval} data")
 
     # Exclude the newest bar because the provider may still be forming it.
     if len(candles) > 1:

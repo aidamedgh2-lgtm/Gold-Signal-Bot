@@ -90,6 +90,19 @@ class SupplyDemandBacktestTests(unittest.TestCase):
         self.assertIsNone(summary["profit_factor"])
         self.assertEqual(summary["win_rate_pct"], 100)
 
+    def test_intraday_pagination_cursor_moves_before_oldest_candle(self):
+        import datetime as dt
+        oldest = dt.datetime(2026, 11, 27, 10, 0, tzinfo=dt.timezone.utc)
+        cursor = bt.page_cursor_before(oldest)
+        self.assertEqual(cursor, oldest - dt.timedelta(seconds=1))
+        self.assertLess(cursor, oldest)
+
+    def test_intraday_history_window_rejects_invalid_days(self):
+        import os
+        from unittest.mock import patch
+        with patch.dict(os.environ, {"SD_INTRADAY_HISTORY_DAYS": "0"}):
+            with self.assertRaisesRegex(RuntimeError, "between 1 and 365"):
+                bt.fetch_history("1min", "M1", "1min")
 
 if __name__ == "__main__":
     unittest.main()

@@ -181,7 +181,9 @@ def confirmation(bars, zone):
     if len(bars) < 3:
         return None
     prev, cur = bars[-2], bars[-1]
-    touched = cur["low"] <= zone["high"] and cur["high"] >= zone["low"]
+    touched_cur = cur["low"] <= zone["high"] and cur["high"] >= zone["low"]
+    touched_prev = prev["low"] <= zone["high"] and prev["high"] >= zone["low"]
+    touched = touched_cur or touched_prev
     if not touched:
         return None
     rng = max(cur["high"]-cur["low"], 1e-9)

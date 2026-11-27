@@ -20,11 +20,24 @@ class StrategyFidelityTests(unittest.TestCase):
         bars.append(self.bar(100, 101))
         self.assertEqual(zone_duration_points(bars, self.zone, 0), (0, 5))
 
-    def test_consecutive_touches_are_one_visit(self):
+    def test_consecutive_touches_are_one_completed_visit(self):
         bars = [self.bar(95, 98), self.bar(101, 103), self.bar(100, 101),
-                self.bar(95, 99), self.bar(101, 103)]
-        self.assertEqual(count_zone_visits(bars, self.zone, 0), 2)
-        self.assertEqual(visit_points(2), 0)
+                self.bar(95, 99)]
+        self.assertEqual(count_zone_visits(bars, self.zone, 0), 1)
+        self.assertEqual(visit_points(count_zone_visits(bars, self.zone, 0)), 1)
+
+    def test_current_active_first_visit_is_not_counted_as_a_prior_visit(self):
+        bars = [self.bar(95, 98), self.bar(101, 103), self.bar(100, 101)]
+        visits = count_zone_visits(bars, self.zone, 0)
+        self.assertEqual(visits, 0)
+        self.assertEqual(visit_points(visits), 2)
+
+    def test_current_active_second_visit_counts_only_the_previous_episode(self):
+        bars = [self.bar(95, 98), self.bar(101, 103), self.bar(95, 99),
+                self.bar(101, 103)]
+        visits = count_zone_visits(bars, self.zone, 0)
+        self.assertEqual(visits, 1)
+        self.assertEqual(visit_points(visits), 1)
 
     def test_mtf_counts_distinct_overlapping_higher_and_lower_frames(self):
         zones = [

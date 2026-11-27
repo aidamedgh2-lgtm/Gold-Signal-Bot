@@ -58,8 +58,13 @@ def fetch(interval, label):
         payload = json.loads(response.read().decode("utf-8"))
     if "values" not in payload:
         raise RuntimeError(f"Twelve Data {label}: {payload.get('message') or payload}")
+    raw_items = sorted(payload["values"], key=lambda item: item["datetime"])
+    # Twelve Data can return a very long monthly history; old 1970s rows contain
+    # malformed OHLC and are irrelevant to this recent M15 replay window.
+    if label == "MN1":
+        raw_items = raw_items[-36:]
     rows, invalid = [], []
-    for item in payload["values"]:
+    for item in raw_items:
         try:
             bar = {"time": item["datetime"]}
             for key in ("open", "high", "low", "close"):
@@ -73,7 +78,7 @@ def fetch(interval, label):
             rows.append(bar)
         except (KeyError, TypeError, ValueError) as exc:
             invalid.append({"time": item.get("datetime"), "error": str(exc)})
-    allowed_invalid = max(2, int(len(payload["values"]) * 0.005))
+    allowed_invalid = max(2, int(len(raw_items) * 0.005))
     if len(invalid) > allowed_invalid:
         raise RuntimeError(
             f"{label}: rejected {len(invalid)} invalid OHLC rows "

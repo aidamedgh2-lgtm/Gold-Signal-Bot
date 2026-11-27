@@ -21,14 +21,23 @@ def zone_duration_points(bars, zone, departure_end_index):
 
 
 def count_zone_visits(bars, zone, departure_end_index):
-    """Count distinct touch episodes; consecutive candles form one visit."""
+    """Count completed touch episodes before the current bar's active visit.
+
+    If the latest closed candle still touches the zone, that episode is the
+    visit currently being evaluated and must not be counted as a prior visit.
+    Consecutive touching candles form one episode.
+    """
     visits = 0
     was_inside = False
+    latest_inside = False
     for bar in bars[departure_end_index + 1:]:
         inside = bar_touches_zone(bar, zone)
         if inside and not was_inside:
             visits += 1
         was_inside = inside
+        latest_inside = inside
+    if latest_inside and visits:
+        visits -= 1
     return visits
 
 

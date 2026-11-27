@@ -56,98 +56,13 @@ def atr(bars, period=14):
 
 
 def detect_zones(bars, tf):
-    """اكتشاف قاعدة قصيرة تليها إزاحة سعرية؛ لا يستخدم بيانات مستقبلية بعد شمعة الانطلاق."""
-    zones = []
-    a = atr(bars)
-    if not a:
-        return zones
-    start = max(BASE_MAX + 2, len(bars) - SCAN_BARS)
-    for end in range(start, len(bars) - 2):
-        for count in range(BASE_MIN, BASE_MAX + 1):
-            s = end - count
-            base = bars[s:end]
-            base_mid = sum((x["open"] + x["close"]) / 2 for x in base) / count
-            base_range = max(x["high"] for x in base) - min(x["low"] for x in base)
-            if base_range > max(0.9 * a, 0.0):
-                continue
-            departure = bars[end:min(end+6, len(bars))]
-            if len(departure) < 2:
-                continue
-            # قياس أقوى ابتعاد خلال أول خمس شمعات بعد القاعدة
-            up = max(x["close"] for x in departure) - base_mid
-            down = base_mid - min(x["close"] for x in departure)
-            direction = "DEMAND" if up >= down else "SUPPLY"
-            move = max(up, down)
-            same_body = 0.0
-            for x in departure[:5]:
-                body = x["close"] - x["open"]
-                if (direction == "DEMAND" and body > 0) or (direction == "SUPPLY" and body < 0):
-                    same_body += abs(body)
-            total_body = sum(abs(x["close"]-x["open"]) for x in departure[:5]) or 1e-9
-            impulse_share = same_body / total_body
-            move_atr = move / a
-            if move_atr >= ROCKET_ATR and impulse_share >= 0.55:
-                move_points, move_type = 2, "حادة/صاروخية"
-            elif move_atr >= STAIR_ATR:
-                move_points, move_type = 1, "متدرجة"
-            else:
-                continue
-            if direction == "DEMAND":
-                zlo = min(x["low"] for x in base)
-                zhi = max(max(x["open"], x["close"]) for x in base)
-            else:
-                zlo = min(min(x["open"], x["close"]) for x in base)
-                zhi = max(x["high"] for x in base)
-            if zhi <= zlo:
-                continue
-            departure_end = min(end + 5, len(bars)-1)
-            visits = 0
-            was_inside = False
-            for x in bars[departure_end+1:]:
-                inside = x["low"] <= zhi and x["high"] >= zlo
-                if inside and not was_inside:
-                    visits += 1
-                was_inside = inside
-            visit_points = 2 if visits == 0 else (1 if visits == 1 else 0)
-            duration_points = 1 if count <= 4 else 0
-            # سرعة الاقتراب: انتقال لا يقل عن 1 ATR خلال ثلاث شمعات قبل لمس المنطقة
-            last = bars[-1]
-            recent = bars[-4:-1]
-            if len(recent) == 3:
-                prior_close = recent[0]["close"]
-                touched = last["low"] <= zhi and last["high"] >= zlo
-                fast_approach = ((direction == "DEMAND" and prior_close-zhi >= a and
-                                  last["close"] > last["open"] and touched) or
-                                 (direction == "SUPPLY" and zlo-prior_close >= a and
-                                  last["close"] < last["open"] and touched))
-            else:
-                fast_approach = False
-            arrival_points = 1 if fast_approach else 0
-            # الهدف المرجعي: قمة/قاع آخر 100 شمعة في الاتجاه المقابل
-            look = bars[max(0, end-100):end]
-            stop = zlo - STOP_BUFFER_ATR*a if direction == "DEMAND" else zhi + STOP_BUFFER_ATR*a
-            entry_ref = (zlo+zhi)/2
-            risk = abs(entry_ref-stop)
-            target = (max(x["high"] for x in look) if direction == "DEMAND"
-                      else min(x["low"] for x in look)) if look else entry_ref
-            reward = (target-entry_ref if direction == "DEMAND" else entry_ref-target)
-            rr = reward/risk if risk > 0 else 0
-            rr_points = 2 if rr >= 3 else (1 if rr >= 2 else 0)
-            zones.append({"tf":tf,"direction":direction,"low":zlo,"high":zhi,
-                "atr":a,"stop":stop,"rr":rr,"rr_points":rr_points,
-                "move_points":move_points,"move_type":move_type,
-                "visit_points":visit_points,"visits":visits,
-                "duration_points":duration_points,"base_bars":count,
-                "arrival_points":arrival_points,"move_atr":move_atr,
-                "created":bars[s]["time"],"last":last["close"]})
-            # منع إضافة القاعدة نفسها بأطوال مختلفة
-            break
-    # احتفظ بأحدث المناطق فقط لكل نوع وفريم
-    result = []
-    for direction in ("DEMAND","SUPPLY"):
-        subset = [z for z in zones if z["direction"] == direction]
-        result.extend(subset[-8:])
-    return result
+    """Fail closed: the former ATR/OHLC proxy is not the PDF's visual zone method.
+
+    Do not generate candidate zones until a chart-first detector has passed the
+    PDF golden-case benchmark. Returning no zones is intentional and prevents
+    proxy-derived candidates from being presented as strategy-compliant.
+    """
+    return []
 
 
 def overlaps(a, b):
@@ -252,6 +167,13 @@ def comex_daily_context():
 
 def main():
     data = {}
+    # HARD FIDELITY GATE:
+    # The previous automatic detector used ATR/OHLC proxies that failed the
+    # source-PDF compliance audit. No candidate, score, or trade alert may be
+    # produced until a chart-first detector passes the golden-case benchmark.
+    print("تم إيقاف إصدار الإشارات: كاشف المناطق السابق غير مطابق للمرجع. "
+          "يلزم اجتياز اختبار الحالات البصرية المرجعية أولاً.")
+    return
     # كل فريم مستقل في جلب البيانات؛ تعذر أي فريم يعني عدم إصدار إشارة ناقصة.
     for interval, label in TIMEFRAMES:
         try:

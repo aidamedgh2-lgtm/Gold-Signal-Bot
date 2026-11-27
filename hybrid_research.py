@@ -104,50 +104,50 @@ def replay(histories, cost_r):
         candidates=[z for z in bt.score_candidates(zones,price) if z["score"]>=7]
         if not candidates:
             continue
-        best=candidates[0]
-        direction="BUY" if best["direction"]=="DEMAND" else "SELL"
-        zone_key=(best["tf"],best["direction"],round(best["low"],4),round(best["high"],4),best["created"])
-        m5_confirm=live.confirmation(m5_prefix,best)
-        m1_mss=mss_confirmation(m1_prefix,best)
         for name,state in variants.items():
             diag=state["diagnostics"]
-            diag["setups"]+=1
-            if m5_confirm:
-                diag["m5_confirmations"]+=1
-            if m1_mss:
-                diag["m1_mss_signals"]=diag.get("m1_mss_signals",0)+1
-            if name.startswith("A_"):
-                # M5 confirmation is mandatory; M1 can only refine its entry.
-                if not m5_confirm:
+            diag["setups"]+=len(candidates)
+            for best in candidates:
+                direction="BUY" if best["direction"]=="DEMAND" else "SELL"
+                zone_key=(best["tf"],best["direction"],round(best["low"],4),round(best["high"],4),best["created"])
+                if zone_key in state["seen"]:
                     continue
-                entry=m5_prefix[-1]["close"]
-                entry_time=m5_prefix[-1]["time"]
-                note=m5_confirm
-                if m1_mss and directional_m5_alignment(m5_prefix,direction):
+                m5_confirm=live.confirmation(m5_prefix,best)
+                m1_mss=mss_confirmation(m1_prefix,best)
+                if m5_confirm:
+                    diag["m5_confirmations"]+=1
+                if m1_mss:
+                    diag["m1_mss_signals"]=diag.get("m1_mss_signals",0)+1
+                if name.startswith("A_"):
+                    # M5 confirmation is mandatory; M1 can only refine its entry.
+                    if not m5_confirm:
+                        continue
+                    entry=m5_prefix[-1]["close"]
+                    entry_time=m5_prefix[-1]["time"]
+                    note=m5_confirm
+                    if m1_mss and directional_m5_alignment(m5_prefix,direction):
+                        entry=m1_prefix[-1]["close"]
+                        entry_time=m1_prefix[-1]["time"]
+                        note+=" + M1 MSS entry refinement"
+                        diag["m1_refinements"]+=1
+                else:
+                    # M1 MSS can replace the M5 candle pattern only if M5 direction agrees.
+                    if not m1_mss or not directional_m5_alignment(m5_prefix,direction):
+                        continue
                     entry=m1_prefix[-1]["close"]
                     entry_time=m1_prefix[-1]["time"]
-                    note+=" + M1 MSS entry refinement"
-                    diag["m1_refinements"]+=1
-            else:
-                # M1 MSS can replace the M5 candle pattern only if M5 direction agrees.
-                if not m1_mss or not directional_m5_alignment(m5_prefix,direction):
-                    continue
-                entry=m1_prefix[-1]["close"]
-                entry_time=m1_prefix[-1]["time"]
-                note=m1_mss+" + M5 directional alignment"
-            if zone_key in state["seen"]:
-                continue
-            state["seen"].add(zone_key)
-            diag["signals"]+=1
-            if i<=state["last_exit"]:
-                continue
-            result=bt.simulate_trade(m5_prefix+plain["M5"][i+1:],i,direction,entry,best["stop"],cost_r=cost_r)
-            if result is None:
-                continue
-            state["trades"].append({"variant":name,"signal_time":entry_time,"direction":direction,
-                "zone_tf":best["tf"],"score":best["score"],"zone_low":best["low"],
-                "zone_high":best["high"],"confirmation":note,"entry":entry,"stop":best["stop"],**result})
-            state["last_exit"]=result["exit_index"]
+                    note=m1_mss+" + M5 directional alignment"
+                state["seen"].add(zone_key)
+                diag["signals"]+=1
+                if i<=state["last_exit"]:
+                    break
+                result=bt.simulate_trade(m5_prefix+plain["M5"][i+1:],i,direction,entry,best["stop"],cost_r=cost_r)
+                if result is not None:
+                    state["trades"].append({"variant":name,"signal_time":entry_time,"direction":direction,
+                        "zone_tf":best["tf"],"score":best["score"],"zone_low":best["low"],
+                        "zone_high":best["high"],"confirmation":note,"entry":entry,"stop":best["stop"],**result})
+                    state["last_exit"]=result["exit_index"]
+                break
     return variants
 
 

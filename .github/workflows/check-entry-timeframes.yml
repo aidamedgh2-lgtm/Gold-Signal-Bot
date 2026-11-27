@@ -1,0 +1,80 @@
+name: Check M1 and M5 data availability
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-entry-timeframes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: research/m1-m5-confirmation-test
+
+      - name: Check Twelve Data M1 and M5 access
+        env:
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          key = os.environ.get("TWELVEDATA_API_KEY", "").strip()
+          if not key:
+              raise SystemExit("TWELVEDATA_API_KEY is missing.")
+
+          base = "https://api.twelvedata.com/time_series"
+          for interval in ("1min", "5min"):
+              params = urllib.parse.urlencode({
+                  "symbol": "XAU/USD",
+                  "interval": interval,
+                  "outputsize": 5000,
+                  "timezone": "UTC",
+                  "order": "asc",
+                  "apikey": key,
+                  "format": "JSON",
+              })
+              request = urllib.request.Request(
+                  base + "?" + params,
+                  headers={"User-Agent": "Gold-Signal-Bot-Timeframe-Research/1.0"},
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=35) as response:
+                      payload = json.loads(response.read().decode("utf-8"))
+              except Exception as exc:
+                  raise SystemExit(f"{interval}: request failed: {exc}")
+
+              if "values" not in payload:
+                  raise SystemExit(
+                      f"{interval}: API did not return candles: "
+                      f"{payload.get('message') or payload}"
+                  )
+
+              values = payload["values"]
+              if len(values) < 100:
+                  raise SystemExit(
+                      f"{interval}: only {len(values)} candles returned; "
+                      "not enough even for a basic data-access check."
+                  )
+
+              print(f"\n{interval} — ACCESS OK")
+              print("Symbol:", (payload.get("meta") or {}).get("symbol", "not specified"))
+              print("Interval:", (payload.get("meta") or {}).get("interval", interval))
+              print("Candles returned:", len(values))
+              print("Newest candle:", values[0].get("datetime"))
+              print("Oldest candle:", values[-1].get("datetime"))
+              print("OHLC fields present:", all(
+                  all(k in row for k in ("open", "high", "low", "close"))
+                  for row in values
+              ))
+              print("Volume field present in sample:", "volume" in values[0])
+
+          print("\nDATA ACCESS CHECK PASSED. This confirms endpoint access only; it does not test strategy performance.")
+          PY

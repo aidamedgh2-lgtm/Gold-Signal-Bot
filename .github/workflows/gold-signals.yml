@@ -105,12 +105,7 @@ jobs:
               "to": today.isoformat() + "T23:59:59Z",
               "limit": 100,
           })
-          req = urllib.request.Request(
-              "https://api.goldprice.dev/v1/bars?" + params,
-              headers={"Authorization": f"Bearer {key}", "User-Agent": "Gold-Signal-Bot/1.0"},
-          )
-          with urllib.request.urlopen(req, timeout=25) as response:
-              data = json.loads(response.read().decode("utf-8"))
+          data = {}
           all_bars = []
           page_count = 0
           next_cursor = None
@@ -133,6 +128,9 @@ jobs:
               print(f"Page {page_count}: {len(page_bars)} bars; has next cursor: {bool(next_cursor)}")
               if not next_cursor:
                   break
+
+          if next_cursor:
+              raise SystemExit("Reached the 10-page safety limit before pagination completed.")
 
           if not all_bars:
               raise SystemExit("API connected, but no COMEX daily bars were returned.")

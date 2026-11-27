@@ -81,20 +81,42 @@ def fetch_history(interval, label, kind):
     if "values" not in payload:
         raise RuntimeError(f"{label}: {payload.get('message') or payload}")
     bars = []
-    for item in payload["values"]:
-        stamp = str(item["datetime"])
-        bar = {"time": stamp}
-        for field in ("open", "high", "low", "close"):
-            bar[field] = float(item[field])
-            if not math.isfinite(bar[field]):
-                raise RuntimeError(f"{label}: non-finite {field}")
-        if (bar["high"] < max(bar["open"], bar["close"], bar["low"])
-                or bar["low"] > min(bar["open"], bar["close"], bar["high"])):
-            raise RuntimeError(f"{label}: invalid OHLC at {stamp}")
-        start = parse_time(stamp)
-        bar["_start"] = start
-        bar["_end"] = candle_end(start, kind)
-        bars.append(bar)
+    invalid_rows = []
+    raw_values = payload["values"]
+    for item in raw_values:
+        stamp = str(item.get("datetime", "<missing timestamp>"))
+        try:
+            bar = {"time": stamp}
+            for field in ("open", "high", "low", "close"):
+                bar[field] = float(item[field])
+            values = [bar[field] for field in ("open", "high", "low", "close")]
+            valid = (
+                all(math.isfinite(value) and value > 0 for value in values)
+                and bar["high"] >= max(bar["open"], bar["close"], bar["low"])
+                and bar["low"] <= min(bar["open"], bar["close"], bar["high"])
+            )
+            if not valid:
+                invalid_rows.append(f"{stamp} OHLC={values}")
+                continue
+            start = parse_time(stamp)
+            bar["_start"] = start
+            bar["_end"] = candle_end(start, kind)
+            bars.append(bar)
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            invalid_rows.append(f"{stamp} ({type(exc).__name__}: {exc})")
+
+    # Some long-range provider responses contain isolated malformed legacy rows.
+    # Skip a very small number, but fail closed if data quality is broadly poor.
+    max_invalid = max(2, math.ceil(len(raw_values) * 0.001))
+    if len(invalid_rows) > max_invalid:
+        sample = "; ".join(invalid_rows[:5])
+        raise RuntimeError(
+            f"{label}: rejected {len(invalid_rows)}/{len(raw_values)} invalid OHLC rows "
+            f"(limit {max_invalid}); examples: {sample}"
+        )
+    if invalid_rows:
+        print(f"{label}: skipped {len(invalid_rows)} invalid provider OHLC row(s): "
+              + "; ".join(invalid_rows[:3]))
     bars, duplicate_count = deduplicate_bars(bars, label)
     if duplicate_count:
         print(f"{label}: ignored {duplicate_count} exact duplicate OHLC rows")

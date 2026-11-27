@@ -289,16 +289,16 @@ def main():
             continue
         if z["direction"] == "SUPPLY" and price > z["high"]+0.15*z["atr"]:
             continue
-        matches = [x for x in all_zones if x is not z and x["direction"] == z["direction"]
-                   and x["tf"] != z["tf"] and overlaps(z,x)
-                   and max(x["low"]-price, 0, price-x["high"]) <= MAX_NEAR_ATR*x["atr"]
-                   and not ((x["direction"] == "DEMAND" and price < x["low"]-0.15*x["atr"]) or
-                            (x["direction"] == "SUPPLY" and price > x["high"]+0.15*x["atr"]))]
-        z["matches"] = sorted({x["tf"] for x in matches}, key=lambda t: tf_order.index(t))
-        z["mtf_points"] = mtf_points(z["matches"])
+        eligible_mtf = [x for x in all_zones if x is not z
+                        and max(x["low"]-price, 0, price-x["high"]) <= MAX_NEAR_ATR*x["atr"]
+                        and not ((x["direction"] == "DEMAND" and price < x["low"]-0.15*x["atr"]) or
+                                 (x["direction"] == "SUPPLY" and price > x["high"]+0.15*x["atr"]))]
+        matches = hierarchical_mtf_matches(z, eligible_mtf)
+        z["matches"] = matches
+        z["mtf_points"] = mtf_points(matches)
         z["target"] = opposing_zone_target(z, all_zones)
         z["rr"], z["rr_points"] = rr_from_zone(z, z["target"], z["stop"])
-        z["score"] = (z["move_points"] + z["rr_points"] + mtf_points +
+        z["score"] = (z["move_points"] + z["rr_points"] + z["mtf_points"] +
                       z["visit_points"] + z["duration_points"] + z["arrival_points"])
         candidates.append(z)
     if not candidates:

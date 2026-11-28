@@ -1,4 +1,6 @@
+import io
 import json
+import urllib.error
 import unittest
 from unittest.mock import patch
 
@@ -52,6 +54,21 @@ class GeminiClientTests(unittest.TestCase):
                    return_value=FakeResponse(response)):
             with self.assertRaisesRegex(RuntimeError, "invalid JSON"):
                 generate_json("prompt", b"image", {"type": "object"}, "key", "model")
+
+    def test_retries_transient_503_but_does_not_retry_quota_errors(self):
+        unavailable = urllib.error.HTTPError(
+            "https://generativelanguage.googleapis.com", 503, "Unavailable",
+            {"Retry-After": "1"}, io.BytesIO(b'{"error":{"status":"UNAVAILABLE","message":"busy"}}'),
+        )
+        success = {"candidates": [{"content": {"parts": [{"text": '{"ok": true}'}]}}]}
+        with patch(
+            "services.gemini_http.urllib.request.urlopen",
+            side_effect=[unavailable, FakeResponse(success)],
+        ) as mocked, patch("services.gemini_http.time.sleep") as sleeper:
+            result = generate_json("inspect", b"png", {"type": "object"}, "key", "model")
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(mocked.call_count, 2)
+        sleeper.assert_called_once_with(1.0)
 
 
 if __name__ == "__main__":

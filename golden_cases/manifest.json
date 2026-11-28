@@ -1,0 +1,109 @@
+{
+  "schema_version": "1.0",
+  "authority": {
+    "document": "المضغوط (1).pdf",
+    "pages_total": 143,
+    "note": "The original PDF page images and text are authoritative. This manifest records only labels explicitly supported by the cited pages; it does not invent candle data or price coordinates."
+  },
+  "cases": [
+    {
+      "case_id": "PDF-DEPARTURE-01A",
+      "criterion": "departure_strength",
+      "source_pages": [33, 34],
+      "visual_reference": "Page 34 chart with the green steep rising path from the marked origin; page 33 defines the visual scale.",
+      "expected_label": 2,
+      "label_status": "source_labelled",
+      "expected_class": "steep_or_near_vertical",
+      "score_scale": {"horizontal_0_to_30_degrees": 0, "smooth_diagonal_around_45_degrees": 1, "steep_around_70_to_90_degrees": 2},
+      "machine_coordinates": null,
+      "unresolved": ["Exact pixel polygon for the origin zone requires a separate human annotation."]
+    },
+    {
+      "case_id": "PDF-MTF-01A",
+      "criterion": "multi_timeframe_zone_identity",
+      "source_pages": [69, 70, 71, 72, 73, 74],
+      "visual_reference": "Top-down example described as monthly, then weekly, then daily; page 73 states the zones have matched.",
+      "expected_matching_frame_count": 3,
+      "expected_points": 2,
+      "label_status": "rule_and_example_labelled",
+      "hierarchy": ["MN1", "W1", "D1"],
+      "same_zone_identity_required": true,
+      "machine_coordinates": null,
+      "unresolved": ["Exact upper/lower price boundaries are not reliably machine-readable from the screenshots."]
+    },
+    {
+      "case_id": "PDF-MTF-01B",
+      "criterion": "multi_timeframe_skip",
+      "source_pages": [74, 75, 76],
+      "visual_reference": "The source says when the monthly zone is difficult to draw, move to weekly; page 76 says refine the zone on weekly and remove the monthly drawing.",
+      "expected_behavior": "allow_skip_of_unsuitable_larger_timeframe",
+      "label_status": "source_labelled",
+      "hierarchy": ["MN1", "W1"],
+      "must_not_require_every_intermediate_frame": true,
+      "machine_coordinates": null,
+      "unresolved": ["This is a hierarchy/skip case, not a numeric price-boundary benchmark."]
+    },
+    {
+      "case_id": "PDF-APPROACH-01A",
+      "criterion": "return_approach",
+      "source_pages": [135, 136, 137],
+      "visual_reference": "Three schematic paths toward a zone. The first steep/fast path is marked 1 point; the two slower stair/diagonal paths are marked 0.",
+      "expected_labels": [
+        {"path": "steep_fast", "points": 1},
+        {"path": "stair_or_diagonal", "points": 0},
+        {"path": "gradual_staircase", "points": 0}
+      ],
+      "label_status": "source_labelled",
+      "machine_coordinates": null,
+      "unresolved": ["No numeric speed, angle threshold, ATR threshold, or candle-count formula is specified for this criterion."]
+    },
+    {
+      "case_id": "PDF-APPROACH-01B",
+      "criterion": "return_approach",
+      "source_pages": [139, 140, 141],
+      "visual_reference": "The source describes a rocket-like return and gives a 7/8-like visual analogy for the one-point pattern.",
+      "expected_label": "rocket_like_or_7_8_like",
+      "expected_points": 1,
+      "label_status": "source_labelled_visual",
+      "machine_coordinates": null,
+      "unresolved": ["The 7/8 analogy is visual only; do not turn it into a mathematical curve test."]
+    },
+    {
+      "case_id": "PDF-SCORE-01",
+      "criterion": "score_weights",
+      "source_pages": [143],
+      "expected_weights": {
+        "departure_strength": 2,
+        "risk_reward": 2,
+        "multi_timeframe": 2,
+        "zone_visits": 2,
+        "time_inside_zone": 1,
+        "return_approach": 1
+      },
+      "expected_total": 10,
+      "label_status": "fully_labelled",
+      "machine_coordinates": null
+    },
+    {
+      "case_id": "PDF-ZONE-BOUNDARY-01",
+      "criterion": "zone_boundary_detection",
+      "source_pages": [67, 68, 70, 71, 72, 73, 74, 75, 76, 139, 140, 141],
+      "expected_label": "human_annotation_required",
+      "label_status": "incomplete",
+      "machine_coordinates": null,
+      "unresolved": [
+        "Do not infer exact prices from coloured pixels unless the chart price scale and boundaries are legible.",
+        "Do not use the former ATR/OHLC detector to create ground-truth labels.",
+        "A reviewer must annotate each zone polygon or explicitly mark its boundary as unresolved."
+      ]
+    }
+  ],
+  "acceptance_policy": {
+    "unknown_is_valid": true,
+    "model_confidence_is_not_strategy_score": true,
+    "no_ohlc_reconstruction_from_screenshot": true,
+    "no_atr_or_fixed_numeric_proxy_for_visual_criteria": true,
+    "no_profitability_claim_from_pdf_examples": true,
+    "do_not_enable_live_signals_until_zone_boundaries_and_all_six_criteria_pass_review": true
+  }
+}

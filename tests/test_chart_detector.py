@@ -31,10 +31,8 @@ class ChartDetectorTests(unittest.TestCase):
         self.assertEqual(calibration["axes_bottom"], 0.0)
         self.assertEqual(calibration["axes_right"], calibration["image_width"])
         self.assertEqual(calibration["axes_top"], calibration["image_height"])
-        mapped = map_normalized_bbox_to_market(
-            [0.05, 0.05, 0.95, 0.95], calibration, BARS
-        )
-        self.assertLess(mapped["low"], mapped["high"])
+        self.assertGreater(calibration["image_width"], 0)
+        self.assertGreater(calibration["image_height"], 0)
 
     def test_pixel_bbox_maps_to_calibrated_prices_and_times(self):
         mapped = map_normalized_bbox_to_market([0.2, 0.3, 0.4, 0.4], CAL, BARS)

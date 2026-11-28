@@ -57,13 +57,22 @@ class ChartDetectorTests(unittest.TestCase):
         self.assertEqual(result[0]["boundary_method"],
                          "origin_candle_full_wick_low_high")
 
-    def test_only_sharp_departure_is_accepted(self):
-        for departure in ("sideways", "diagonal", "uncertain"):
+    def test_diagonal_is_retained_for_lower_timeframe_confirmation(self):
+        result = validate_zone_result({"zones": [{
+            "direction": "DEMAND", "origin_candle_index": 7,
+            "departure": "diagonal", "confidence": 0.99,
+            "evidence": "Strong directional but slanted departure"
+        }]}, BARS)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["departure"], "diagonal")
+
+    def test_sideways_and_uncertain_departures_are_rejected_immediately(self):
+        for departure in ("sideways", "uncertain"):
             with self.subTest(departure=departure):
                 result = validate_zone_result({"zones": [{
                     "direction": "DEMAND", "origin_candle_index": 7,
                     "departure": departure, "confidence": 0.99,
-                    "evidence": "Not a sharp departure"
+                    "evidence": "Not a directional impulse"
                 }]}, BARS)
                 self.assertEqual(result, [])
 

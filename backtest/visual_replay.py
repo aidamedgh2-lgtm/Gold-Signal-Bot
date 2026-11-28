@@ -1,7 +1,7 @@
 """Chronological visual replay using Twelve Data + two AI reviews.
 This is a detector/reviewer replay, not a P/L backtest.
 """
-import csv, datetime as dt, json, os, time, urllib.parse, urllib.request
+import csv, datetime as dt, json, os, time, urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 from services.chart_detector import detect_visual_zones
 from services.vision_review import assess_candidate
@@ -37,8 +37,28 @@ def build_checkpoints(histories, n):
 def fetch(interval, delta, days, now):
     params=urllib.parse.urlencode({"symbol":SYMBOL,"interval":interval,"outputsize":5000,"timezone":"UTC","order":"desc","end_date":now.strftime("%Y-%m-%d %H:%M:%S"),"apikey":KEY,"format":"JSON"})
     req=urllib.request.Request(API+"?"+params,headers={"User-Agent":"Gold-SD-Visual-Replay/1.0"})
-    with urllib.request.urlopen(req,timeout=45) as r: payload=json.loads(r.read().decode())
-    if "values" not in payload: raise RuntimeError(f"{interval}: {payload.get('message') or payload}")
+    payload=None
+    for attempt in range(5):
+        try:
+            with urllib.request.urlopen(req,timeout=45) as response:
+                payload=json.loads(response.read().decode())
+            break
+        except urllib.error.HTTPError as exc:
+            if exc.code != 429 or attempt == 4:
+                raise RuntimeError(
+                    f"{interval}: Twelve Data request failed (HTTP {exc.code})"
+                ) from exc
+            retry_after=exc.headers.get("Retry-After")
+            try:
+                delay=float(retry_after) if retry_after else 20.0*(attempt+1)
+            except (TypeError, ValueError):
+                delay=20.0*(attempt+1)
+            delay=min(max(delay,5.0),90.0)
+            print(f"{interval}: Twelve Data rate limit; retrying in {delay:.0f}s")
+            time.sleep(delay)
+    if not isinstance(payload,dict) or "values" not in payload:
+        message=payload.get("message") if isinstance(payload,dict) else "invalid provider response"
+        raise RuntimeError(f"{interval}: {message}")
     start=now-dt.timedelta(days=days); bars=[]
     for x in payload["values"]:
         stamp=parse_utc(x["datetime"])

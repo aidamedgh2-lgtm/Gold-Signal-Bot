@@ -146,7 +146,8 @@ def review_chart_with_vision(image_bytes, api_key, model=MODEL):
         "additionalProperties": False,
     }
     payload = generate_json(
-        instructions, image_bytes, schema, api_key, model, timeout=45
+        instructions, image_bytes, schema, api_key, model, timeout=45,
+        max_output_tokens=450
     )
     return validate_visual_result(payload)
 

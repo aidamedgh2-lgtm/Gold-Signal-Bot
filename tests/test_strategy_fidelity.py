@@ -39,13 +39,14 @@ class FidelityTests(unittest.TestCase):
         parent = {"direction": "DEMAND", "low": 2300.0, "high": 2310.0}
         candidates = {
             "H1": [
-                {"direction": "DEMAND", "low": 2305.0, "high": 2315.0},
+                {"direction": "DEMAND", "low": 2305.0, "high": 2315.0, "departure": "sharp"},
             ],
             "M15": [
-                {"direction": "DEMAND", "low": 2308.0, "high": 2312.0},
+                {"direction": "DEMAND", "low": 2308.0, "high": 2312.0, "departure": "sharp"},
             ],
         }
         result = matching_lower_timeframes("H4", parent, candidates)
+        self.assertTrue(result["eligible"])
         self.assertEqual(result["aligned_timeframes"], ["H4", "H1", "M15"])
         self.assertEqual(result["points"], 2)
 
@@ -59,12 +60,35 @@ class FidelityTests(unittest.TestCase):
         self.assertEqual(result["aligned_timeframes"], ["H4"])
         self.assertEqual(result["points"], 0)
 
+    def test_diagonal_parent_requires_sharp_lower_timeframe(self):
+        parent = {"direction": "DEMAND", "low": 2300, "high": 2310, "departure": "diagonal"}
+        diagonal_lower = {"H1": [{"direction": "DEMAND", "low": 2302, "high": 2308, "departure": "diagonal"}]}
+        sharp_lower = {"H1": [{"direction": "DEMAND", "low": 2302, "high": 2308, "departure": "sharp"}]}
+        self.assertFalse(matching_lower_timeframes("H4", parent, diagonal_lower)["eligible"])
+        self.assertTrue(matching_lower_timeframes("H4", parent, sharp_lower)["eligible"])
+
+    def test_sideways_parent_is_hard_rejected(self):
+        parent = {"direction": "DEMAND", "low": 2300, "high": 2310, "departure": "sideways"}
+        result = matching_lower_timeframes("H4", parent, {
+            "H1": [{"direction": "DEMAND", "low": 2302, "high": 2308, "departure": "sharp"}]
+        })
+        self.assertFalse(result["eligible"])
+        self.assertEqual(result["rejection_reason"], "parent_departure_not_directional")
+
+    def test_lower_timeframe_sideways_or_ai_disagreement_cannot_confirm(self):
+        parent = {"direction": "DEMAND", "low": 2300, "high": 2310, "departure": "diagonal"}
+        candidates = {"H1": [
+            {"direction": "DEMAND", "low": 2302, "high": 2308, "departure": "sharp", "status": "REVIEW_DISAGREES"},
+            {"direction": "DEMAND", "low": 2302, "high": 2308, "departure": "sideways", "status": "TWO_AI_AGREE"},
+        ]}
+        self.assertFalse(matching_lower_timeframes("H4", parent, candidates)["eligible"])
+
     def test_two_timeframes_get_one_point_three_get_two(self):
         parent = {"direction": "SUPPLY", "low": 2400.0, "high": 2410.0}
-        one_match = {"H1": [{"direction": "SUPPLY", "low": 2405.0, "high": 2415.0}]}
+        one_match = {"H1": [{"direction": "SUPPLY", "low": 2405.0, "high": 2415.0, "departure": "sharp"}]}
         two_matches = {
             **one_match,
-            "M15": [{"direction": "SUPPLY", "low": 2402.0, "high": 2408.0}],
+            "M15": [{"direction": "SUPPLY", "low": 2402.0, "high": 2408.0, "departure": "sharp"}],
         }
         self.assertEqual(matching_lower_timeframes("H4", parent, one_match)["points"], 1)
         self.assertEqual(matching_lower_timeframes("H4", parent, two_matches)["points"], 2)

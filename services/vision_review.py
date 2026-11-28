@@ -3,13 +3,10 @@
 The strategy reference is loaded from the repository on every process start and
 included in each vision request. The model supplies visual observations only.
 """
-import base64
 import io
-import json
 import os
 from pathlib import Path
-import urllib.request
-from services.openai_http import openai_urlopen
+from services.gemini_http import generate_json
 
 import matplotlib
 matplotlib.use("Agg")
@@ -17,8 +14,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
 
-MODEL = os.environ.get("OPENAI_VISION_MODEL", "gpt-4.1-mini")
-API_URL = "https://api.openai.com/v1/responses"
+MODEL = os.environ.get("GEMINI_VISION_MODEL", "gemini-3.5-flash-lite")
 REFERENCE_PATH = Path(__file__).resolve().parents[1] / "STRATEGY_REFERENCE.md"
 
 DEPARTURE_LABELS = {"sideways", "diagonal", "sharp", "uncertain"}
@@ -81,16 +77,6 @@ def render_candidate_chart(bars, zone):
     return output.getvalue()
 
 
-def _extract_output_text(payload):
-    if isinstance(payload.get("output_text"), str):
-        return payload["output_text"]
-    chunks = []
-    for item in payload.get("output", []):
-        for part in item.get("content", []):
-            if part.get("type") == "output_text":
-                chunks.append(part.get("text", ""))
-    return "\n".join(chunks)
-
 
 def validate_visual_result(result):
     if not isinstance(result, dict):
@@ -122,15 +108,14 @@ def validate_visual_result(result):
 
 def review_chart_with_vision(image_bytes, api_key, model=MODEL):
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is missing")
+        raise RuntimeError("GEMINI_API_KEY is missing")
     reference = load_strategy_reference()
-    encoded = base64.b64encode(image_bytes).decode("ascii")
     instructions = (
         "You are a visual auditor for the user's original Supply & Demand method. "
         "The following PDF-derived reference is the governing rulebook. Follow it "
-        "literally; do not import other trading methods.\n\n"
+        "literally; do not import other trading methods.\\n\\n"
         + reference
-        + "\n\nTASK: inspect the attached XAU/USD chart. The upper panel shows "
+        + "\\n\\nTASK: inspect the attached XAU/USD chart. The upper panel shows "
         "the candidate zone origin and departure. The lower panel shows the latest "
         "approach. Classify only what is visible. departure: sideways, diagonal, "
         "sharp, uncertain. approach: fast, diagonal, sideways, uncertain. "
@@ -160,43 +145,10 @@ def review_chart_with_vision(image_bytes, api_key, model=MODEL):
         ],
         "additionalProperties": False,
     }
-    body = {
-        "model": model,
-        "input": [{
-            "role": "user",
-            "content": [
-                {"type": "input_text", "text": instructions},
-                {"type": "input_image",
-                 "image_url": "data:image/png;base64," + encoded,
-                 "detail": "high"},
-            ],
-        }],
-        "text": {
-            "format": {
-                "type": "json_schema",
-                "name": "supply_demand_visual_review",
-                "strict": True,
-                "schema": schema,
-            }
-        },
-        "max_output_tokens": 350,
-    }
-    request = urllib.request.Request(
-        API_URL,
-        data=json.dumps(body).encode("utf-8"),
-        headers={
-            "Authorization": "Bearer " + api_key,
-            "Content-Type": "application/json",
-        },
-        method="POST",
+    payload = generate_json(
+        instructions, image_bytes, schema, api_key, model, timeout=45
     )
-    with openai_urlopen(request, timeout=45) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-    raw = _extract_output_text(payload)
-    if not raw:
-        raise RuntimeError("OpenAI vision response contained no output text")
-    return validate_visual_result(json.loads(raw))
-
+    return validate_visual_result(payload)
 
 def assess_candidate(bars, zone, api_key, model=MODEL):
     return review_chart_with_vision(render_candidate_chart(bars, zone), api_key, model)

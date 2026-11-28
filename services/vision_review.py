@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import urllib.request
+from services.openai_http import openai_urlopen
 
 import matplotlib
 matplotlib.use("Agg")
@@ -189,7 +190,7 @@ def review_chart_with_vision(image_bytes, api_key, model=MODEL):
         },
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=45) as response:
+    with openai_urlopen(request, timeout=45) as response:
         payload = json.loads(response.read().decode("utf-8"))
     raw = _extract_output_text(payload)
     if not raw:

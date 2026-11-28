@@ -3,7 +3,6 @@
 This is a visual candidate-detection/review replay, NOT a P/L backtest.
 Unknown criteria remain unknown; this program never emits trade orders.
 """
-import calendar
 import csv
 import datetime as dt
 import json
@@ -259,11 +258,11 @@ def main():
                     )
                     d1_after = [
                         bar for bar in histories["D1"]
-                        if origin_close <= candle_close_time(bar, "1day") <= point
+                        if origin_close < candle_close_time(bar, "1day") <= point
                     ]
                     h4_after = [
                         bar for bar in histories["H4"]
-                        if origin_close <= candle_close_time(bar, "4h") <= point
+                        if origin_close < candle_close_time(bar, "4h") <= point
                     ]
                     duration = duration_points_by_timeframe(
                         d1_after, h4_after, zone["low"], zone["high"]

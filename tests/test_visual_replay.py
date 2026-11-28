@@ -49,6 +49,34 @@ class VisualReplayFetchTests(unittest.TestCase):
         stamp = visual_replay.parse_utc("2026-11-27")
         self.assertEqual(stamp, dt.datetime(2026, 11, 27, tzinfo=dt.timezone.utc))
 
+    def test_checkpoints_begin_after_all_timeframes_have_20_candles(self):
+        histories = {}
+        base = dt.datetime(2026, 10, 1, tzinfo=dt.timezone.utc)
+        for interval, label, delta in visual_replay.TFS:
+            histories[label] = [
+                {"time": (base + delta * i).strftime("%Y-%m-%d %H:%M:%S")}
+                for i in range(30)
+            ]
+        checkpoints = visual_replay.build_checkpoints(histories, 3)
+        first = checkpoints[0]
+        for _, label, _delta in visual_replay.TFS:
+            available = [
+                bar for bar in histories[label]
+                if visual_replay.parse_utc(bar["time"]) <= first
+            ]
+            self.assertGreaterEqual(len(available), 20)
+
+    def test_checkpoints_fail_when_timeframes_do_not_overlap_after_warmup(self):
+        histories = {}
+        base = dt.datetime(2026, 10, 1, tzinfo=dt.timezone.utc)
+        for _interval, label, delta in visual_replay.TFS:
+            histories[label] = [
+                {"time": (base + delta * i).strftime("%Y-%m-%d %H:%M:%S")}
+                for i in range(20)
+            ]
+        with self.assertRaisesRegex(RuntimeError, "20-candle warm-up"):
+            visual_replay.build_checkpoints(histories, 2)
+
     def test_rejects_invalid_ohlc_order(self):
         now = dt.datetime(2026, 11, 28, 10, 40, tzinfo=dt.timezone.utc)
         with patch.object(visual_replay.urllib.request, "urlopen", return_value=FakeResponse({"values": self._values(now, invalid=True)})):

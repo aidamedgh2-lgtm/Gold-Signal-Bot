@@ -45,6 +45,10 @@ class VisualReplayFetchTests(unittest.TestCase):
         self.assertIn("2026-11-28 10:15:00", times)
         self.assertNotIn("2026-11-28 10:30:00", times)
 
+    def test_parses_date_only_daily_candle_timestamp(self):
+        stamp = visual_replay.parse_utc("2026-11-27")
+        self.assertEqual(stamp, dt.datetime(2026, 11, 27, tzinfo=dt.timezone.utc))
+
     def test_rejects_invalid_ohlc_order(self):
         now = dt.datetime(2026, 11, 28, 10, 40, tzinfo=dt.timezone.utc)
         with patch.object(visual_replay.urllib.request, "urlopen", return_value=FakeResponse({"values": self._values(now, invalid=True)})):

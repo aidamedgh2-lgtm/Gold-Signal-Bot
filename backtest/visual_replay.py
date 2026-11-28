@@ -14,6 +14,11 @@ SYMBOL="XAU/USD"
 TFS=[("15min","M15",dt.timedelta(minutes=15)),("1h","H1",dt.timedelta(hours=1)),("4h","H4",dt.timedelta(hours=4)),("1day","D1",dt.timedelta(days=1))]
 OUT=Path("visual_replay_results")
 
+def parse_utc(value):
+    """Parse intraday timestamps and Twelve Data date-only D1 timestamps."""
+    stamp=dt.datetime.fromisoformat(value)
+    return stamp.replace(tzinfo=dt.timezone.utc) if stamp.tzinfo is None else stamp.astimezone(dt.timezone.utc)
+
 def fetch(interval, delta, days, now):
     params=urllib.parse.urlencode({"symbol":SYMBOL,"interval":interval,"outputsize":5000,"timezone":"UTC","order":"desc","end_date":now.strftime("%Y-%m-%d %H:%M:%S"),"apikey":KEY,"format":"JSON"})
     req=urllib.request.Request(API+"?"+params,headers={"User-Agent":"Gold-SD-Visual-Replay/1.0"})
@@ -21,7 +26,7 @@ def fetch(interval, delta, days, now):
     if "values" not in payload: raise RuntimeError(f"{interval}: {payload.get('message') or payload}")
     start=now-dt.timedelta(days=days); bars=[]
     for x in payload["values"]:
-        stamp=dt.datetime.strptime(x["datetime"],"%Y-%m-%d %H:%M:%S").replace(tzinfo=dt.timezone.utc)
+        stamp=parse_utc(x["datetime"])
         if stamp<start or stamp+delta>now: continue
         bars.append({"time":x["datetime"],**{k:float(x[k]) for k in ("open","high","low","close")}})
     bars.sort(key=lambda x:x["time"])
@@ -50,14 +55,14 @@ def main():
     now=dt.datetime.now(dt.timezone.utc); histories={}
     for interval,label,delta in TFS:
         histories[label]=fetch(interval,delta,days,now); print(f"{label}: {len(histories[label])} closed candles"); time.sleep(1)
-    end=min(dt.datetime.strptime(v[-1]["time"],"%Y-%m-%d %H:%M:%S").replace(tzinfo=dt.timezone.utc) for v in histories.values())
+    end=min(parse_utc(v[-1]["time"]) for v in histories.values())
     start=end-dt.timedelta(days=days)
     checkpoints=[start+(end-start)*i/(n-1) for i in range(n)]
     records=[]
     for idx,point in enumerate(checkpoints,1):
         print(f"Checkpoint {idx}/{n}: {point.isoformat()}")
         for _,label,_delta in TFS:
-            available=[b for b in histories[label] if dt.datetime.strptime(b["time"],"%Y-%m-%d %H:%M:%S").replace(tzinfo=dt.timezone.utc)<=point]
+            available=[b for b in histories[label] if parse_utc(b["time"])<=point]
             if len(available)<20:
                 records.append({"checkpoint":idx,"time_utc":point.isoformat(),"tf":label,"status":"INSUFFICIENT_HISTORY"}); continue
             window=available[-180:]

@@ -101,6 +101,36 @@ class VisualReplayFetchTests(unittest.TestCase):
         self.assertEqual(mocked.call_count, 2)
         sleeper.assert_called_once_with(5.0)
 
+    def test_no_lookahead_for_daily_candle(self):
+        bar = {"time": "2026-11-27"}
+        self.assertEqual(
+            visual_replay.candle_close_time(bar, "1day"),
+            dt.datetime(2026, 11, 28, tzinfo=dt.timezone.utc),
+        )
+
+    def test_paginates_to_cover_full_requested_history(self):
+        now = dt.datetime(2026, 11, 28, 10, 40, tzinfo=dt.timezone.utc)
+        start = now - dt.timedelta(days=2)
+        all_values = []
+        for i in range(20):
+            stamp = start + dt.timedelta(minutes=15 * i)
+            all_values.append({
+                "datetime": stamp.strftime("%Y-%m-%d %H:%M:%S"),
+                "open": "10", "high": "12", "low": "9", "close": "11",
+            })
+        newest = list(reversed(all_values[10:]))
+        oldest = list(reversed(all_values[:10]))
+        with patch.object(
+            visual_replay.urllib.request, "urlopen",
+            side_effect=[
+                FakeResponse({"values": newest}),
+                FakeResponse({"values": oldest}),
+            ],
+        ) as mocked, patch.object(visual_replay.time, "sleep"):
+            bars = fetch("15min", dt.timedelta(minutes=15), 2, now, outputsize=10)
+        self.assertEqual(len(bars), 20)
+        self.assertEqual(mocked.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

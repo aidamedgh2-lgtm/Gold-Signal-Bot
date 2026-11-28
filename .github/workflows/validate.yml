@@ -2,7 +2,7 @@ name: Validate bot code
 
 on:
   push:
-    branches: [main]
+    branches: [main, repair/pdf-visual-replay-v2]
   pull_request:
     branches: [main]
   workflow_dispatch:

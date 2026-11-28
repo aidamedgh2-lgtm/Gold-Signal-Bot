@@ -130,7 +130,13 @@ def review_chart_with_vision(image_bytes, api_key, model=MODEL):
         "return toward the zone. If the chart does not show enough context, use "
         "uncertain/unclear and explain why. Confidence is model confidence only, "
         "not strategy points. Do not output score, direction, entry, stop, target, "
-        "pending order, or trading advice."
+        "pending order, or trading advice. "
+        "A strong but slanted directional move is diagonal, not sideways. "
+        "Choppy/oscillating/non-directional movement is sideways and must be rejected. "
+        "A diagonal parent-timeframe candidate is provisional and can be confirmed "
+        "only by a sharp same-direction impulse in the same price area on a lower "
+        "timeframe. Independently verify the detector's departure classification: "
+        + str(zone.get("departure", "unknown")) + "."
     )
     schema = {
         "type": "object",

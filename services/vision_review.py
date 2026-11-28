@@ -135,8 +135,8 @@ def review_chart_with_vision(image_bytes, api_key, model=MODEL):
         "Choppy/oscillating/non-directional movement is sideways and must be rejected. "
         "A diagonal parent-timeframe candidate is provisional and can be confirmed "
         "only by a sharp same-direction impulse in the same price area on a lower "
-        "timeframe. Independently verify the detector's departure classification: "
-        + str(zone.get("departure", "unknown")) + "."
+        "timeframe. Compare lower-timeframe departure origin against the exact "
+        "higher-timeframe anchor range; do not invent a price buffer."
     )
     schema = {
         "type": "object",

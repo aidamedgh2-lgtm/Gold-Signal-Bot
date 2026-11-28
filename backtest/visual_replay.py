@@ -5,6 +5,7 @@ import csv, datetime as dt, json, os, time, urllib.error, urllib.parse, urllib.r
 from pathlib import Path
 from services.chart_detector import detect_visual_zones
 from services.vision_review import assess_candidate
+from strategy_fidelity import matching_lower_timeframes
 
 API="https://api.twelvedata.com/time_series"
 KEY=os.environ.get("TWELVEDATA_API_KEY","").strip()
@@ -111,6 +112,24 @@ def main():
                     time.sleep(2)
             except Exception as exc:
                 records.append({"checkpoint":idx,"time_utc":point.isoformat(),"tf":label,"status":"ERROR","error":str(exc)[:500]}); print(f"{label}: {exc}")
+    # Verify each candidate against matching lower-timeframe zones from the
+    # same checkpoint. Direction and overlapping price area must both agree.
+    by_checkpoint = {}
+    for record in records:
+        if "direction" in record and "low" in record and "high" in record:
+            by_checkpoint.setdefault(record["checkpoint"], {}).setdefault(
+                record["tf"], []
+            ).append(record)
+    for record in records:
+        if "direction" not in record or "low" not in record or "high" not in record:
+            continue
+        aligned = matching_lower_timeframes(
+            record["tf"], record,
+            by_checkpoint.get(record["checkpoint"], {}),
+        )
+        record["mtf_aligned_timeframes"] = aligned["aligned_timeframes"]
+        record["mtf_matched_lower_timeframes"] = aligned["matched_lower_timeframes"]
+        record["mtf_points"] = aligned["points"]
     OUT.mkdir(exist_ok=True)
     (OUT/"replay.json").write_text(json.dumps(records,ensure_ascii=False,indent=2),encoding="utf-8")
     fields=sorted({k for r in records for k in r})

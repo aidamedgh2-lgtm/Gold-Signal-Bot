@@ -25,8 +25,22 @@ def fetch(interval, delta, days, now):
         if stamp<start or stamp+delta>now: continue
         bars.append({"time":x["datetime"],**{k:float(x[k]) for k in ("open","high","low","close")}})
     bars.sort(key=lambda x:x["time"])
-    if len(bars)>1: bars=bars[:-1]
+    # The timestamp+interval filter above already excludes the still-forming
+    # candle. Do not drop the newest remaining candle a second time.
+    import math
+    for bar in bars:
+        values=[bar[k] for k in ("open","high","low","close")]
+        if not all(math.isfinite(v) for v in values):
+            raise RuntimeError(f"{interval}: non-finite OHLC value")
+        if (bar["high"] < max(bar["open"],bar["close"],bar["low"])
+                or bar["low"] > min(bar["open"],bar["close"],bar["high"])):
+            raise RuntimeError(f"{interval}: invalid OHLC ordering")
     if len(bars)<20: raise RuntimeError(f"Insufficient closed {interval} candles: {len(bars)}")
+    # Fail closed if the provider silently truncates the requested lookback.
+    if bars[0]["time"] > start.strftime("%Y-%m-%d %H:%M:%S"):
+        oldest=dt.datetime.strptime(bars[0]["time"],"%Y-%m-%d %H:%M:%S").replace(tzinfo=dt.timezone.utc)
+        if oldest-start > delta*2:
+            raise RuntimeError(f"{interval}: incomplete {days}-day coverage; oldest candle is {oldest.isoformat()}")
     return bars
 
 def main():

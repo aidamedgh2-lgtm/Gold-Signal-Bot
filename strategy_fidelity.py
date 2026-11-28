@@ -62,6 +62,39 @@ def hierarchical_mtf_points(aligned_timeframes: Iterable[str]) -> int:
     return 0
 
 
+def matching_lower_timeframes(parent_tf: str, parent_zone: Mapping,
+                              candidates_by_tf: Mapping[str, Sequence[Mapping]]) -> dict:
+    """Find same-direction, price-overlapping zones on strictly lower frames.
+
+    No arbitrary price tolerance is introduced: the candidate price intervals
+    must overlap. Every timeframe contributes at most once.
+    """
+    if parent_tf not in TIMEFRAME_ORDER:
+        raise ValueError(f"unknown parent timeframe: {parent_tf}")
+    low, high = _finite_number(parent_zone["low"], "zone low"), _finite_number(parent_zone["high"], "zone high")
+    direction = parent_zone.get("direction")
+    if direction not in ("DEMAND", "SUPPLY") or low >= high:
+        raise ValueError("invalid parent zone")
+    parent_order = TIMEFRAME_ORDER[parent_tf]
+    aligned = [parent_tf]
+    matched = []
+    for tf in VALID_TIMEFRAMES[parent_order + 1:]:
+        for candidate in candidates_by_tf.get(tf, ()):
+            if candidate.get("direction") != direction:
+                continue
+            c_low = _finite_number(candidate["low"], "candidate low")
+            c_high = _finite_number(candidate["high"], "candidate high")
+            if c_low < c_high and max(low, c_low) <= min(high, c_high):
+                aligned.append(tf)
+                matched.append(tf)
+                break
+    return {
+        "aligned_timeframes": aligned,
+        "matched_lower_timeframes": matched,
+        "points": hierarchical_mtf_points(aligned),
+    }
+
+
 def _touches(bar: Mapping[str, float], zone_low: float, zone_high: float) -> bool:
     return float(bar["low"]) <= zone_high and float(bar["high"]) >= zone_low
 

@@ -1,6 +1,8 @@
 name: PDF strategy visual historical replay
 
 on:
+  push:
+    branches: [validation/golden-case-baseline]
   workflow_dispatch:
     inputs:
       replay_days:

@@ -15,7 +15,10 @@ from pathlib import Path
 
 from services.chart_detector import detect_visual_zones
 from services.vision_review import assess_candidate
-from strategy_fidelity import (\n    matching_lower_timeframes, count_zone_visits,\n    duration_points_by_timeframe, score_six_criteria,\n)
+from strategy_fidelity import (
+    matching_lower_timeframes, count_zone_visits,
+    duration_points_by_timeframe, score_six_criteria,
+)
 
 API = "https://api.twelvedata.com/time_series"
 KEY = os.environ.get("TWELVEDATA_API_KEY", "").strip()

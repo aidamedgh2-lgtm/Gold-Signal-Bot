@@ -139,7 +139,10 @@ def validate_zone_result(payload, bars, calibration=None):
             raise ValueError("origin_candle_index must be an integer")
         if not 0 <= index < len(bars):
             raise ValueError("origin_candle_index is outside supplied candles")
-        if departure != "sharp":
+        # Sideways/uncertain moves are excluded immediately. A diagonal move
+        # may be retained on a higher timeframe, but can only be confirmed by
+        # a sharp same-direction impulse on a lower timeframe.
+        if departure in ("sideways", "uncertain"):
             continue
         candle = bars[index]
         low, high = float(candle["low"]), float(candle["high"])
@@ -156,7 +159,7 @@ def validate_zone_result(payload, bars, calibration=None):
             "direction": direction, "low": low, "high": high,
             "origin_start": candle["time"], "origin_end": candle["time"],
             "origin_start_index": index, "origin_end_index": index,
-            "origin_candle_index": index, "departure": "sharp",
+            "origin_candle_index": index, "departure": departure,
             "confidence": float(confidence), "evidence": evidence[:500],
             "boundary_status": "clear",
             "boundary_method": "origin_candle_full_wick_low_high",
@@ -192,7 +195,7 @@ def detect_visual_zones(bars, timeframe, api_key, model="gemini-3.5-flash-lite")
             "type": "object", "properties": {
                 "direction": {"type": "string", "enum": ["DEMAND", "SUPPLY"]},
                 "origin_candle_index": {"type": "integer", "minimum": 0},
-                "departure": {"type": "string", "enum": ["sharp"]},
+                "departure": {"type": "string", "enum": ["sharp", "diagonal", "sideways", "uncertain"]},
                 "confidence": {"type": "number", "minimum": 0, "maximum": 1},
                 "evidence": {"type": "string"}
             }, "required": ["direction", "origin_candle_index", "departure",

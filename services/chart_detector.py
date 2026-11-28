@@ -3,19 +3,15 @@
 Vision returns normalized image coordinates only. Prices and timestamps are
 derived deterministically from Matplotlib's chart transform, never guessed by AI.
 """
-import base64
 import io
-import json
 import math
-import urllib.request
-from services.openai_http import openai_urlopen
+from services.gemini_http import generate_json
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
-API_URL = "https://api.openai.com/v1/responses"
 DIRECTIONS = {"DEMAND", "SUPPLY"}
 DEPARTURES = {"sideways", "diagonal", "sharp", "uncertain"}
 
@@ -128,11 +124,10 @@ def validate_zone_result(payload, bars, calibration):
     return accepted
 
 
-def detect_visual_zones(bars, timeframe, api_key, model="gpt-4.1-mini"):
+def detect_visual_zones(bars, timeframe, api_key, model="gemini-3.5-flash-lite"):
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is missing")
+        raise RuntimeError("GEMINI_API_KEY is missing")
     png, calibration = render_market_chart(bars, timeframe)
-    image = base64.b64encode(png).decode("ascii")
     prompt = (
         "Act only as a visual annotator for the user's original Supply & Demand "
         "method. Identify only clearly visible demand/supply origin zones with "
@@ -145,8 +140,8 @@ def detect_visual_zones(bars, timeframe, api_key, model="gpt-4.1-mini"):
         "sharp, or uncertain. If boundaries are unclear, set boundary_status=unclear. "
         "Never estimate or output prices or timestamps. Do not use ATR, candle "
         "thresholds, or generic trading patterns. No score, entry, stop, target, "
-        "forecast, or recommendation. Empty array if no defensible zone.\n\n"
-        "GOVERNING PDF STRATEGY REFERENCE:\n" + _load_reference()
+        "forecast, or recommendation. Empty array if no defensible zone.\\n\\n"
+        "GOVERNING PDF STRATEGY REFERENCE:\\n" + _load_reference()
     )
     schema = {
         "type": "object", "properties": {"zones": {"type": "array", "items": {
@@ -162,33 +157,10 @@ def detect_visual_zones(bars, timeframe, api_key, model="gpt-4.1-mini"):
                             "confidence", "evidence"], "additionalProperties": False
         }}}, "required": ["zones"], "additionalProperties": False
     }
-    body = {
-        "model": model,
-        "input": [{"role": "user", "content": [
-            {"type": "input_text", "text": prompt},
-            {"type": "input_image", "image_url": "data:image/png;base64," + image,
-             "detail": "high"}
-        ]}],
-        "text": {"format": {"type": "json_schema", "name": "visual_zone_annotations",
-                            "strict": True, "schema": schema}},
-        "max_output_tokens": 1800
-    }
-    request = urllib.request.Request(
-        API_URL, data=json.dumps(body).encode("utf-8"),
-        headers={"Authorization": "Bearer " + api_key,
-                 "Content-Type": "application/json"}, method="POST")
-    with openai_urlopen(request, timeout=60) as response:
-        result = json.loads(response.read().decode("utf-8"))
-    raw = result.get("output_text")
-    if not raw:
-        for output in result.get("output", []):
-            for part in output.get("content", []):
-                if part.get("type") == "output_text":
-                    raw = part.get("text", "")
-    if not raw:
-        raise RuntimeError("OpenAI returned no structured vision output")
-    return validate_zone_result(json.loads(raw), bars, calibration)
-
+    payload = generate_json(
+        prompt, png, schema, api_key, model, timeout=60
+    )
+    return validate_zone_result(payload, bars, calibration)
 
 def _load_reference():
     from pathlib import Path

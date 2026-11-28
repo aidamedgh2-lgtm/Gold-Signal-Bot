@@ -39,8 +39,8 @@ jobs:
       - name: Run chronological visual replay
         env:
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_VISION_MODEL: gpt-4.1-mini
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_VISION_MODEL: gemini-3.5-flash-lite
           REPLAY_DAYS: ${{ inputs.replay_days }}
           REPLAY_SNAPSHOTS: ${{ inputs.replay_snapshots }}
         run: python -m backtest.visual_replay

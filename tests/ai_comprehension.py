@@ -36,7 +36,7 @@ def draw(ax, kind, base=100, title=""):
     ax.set_title(title); ax.set_xlim(-1,len(c)); ax.grid(True,alpha=.2); ax.set_ylabel("Price")
 
 def render(kind):
-    fig,ax=plt.subplots(figsize=(10,4),dpi=120); draw(ax,kind,title=kind.upper())
+    fig,ax=plt.subplots(figsize=(10,4),dpi=120); draw(ax,kind,title="Candlestick price chart")
     fig.tight_layout(); b=io.BytesIO(); fig.savefig(b,format="png"); plt.close(fig); return b.getvalue()
 
 def render_pair(parent,child,child_base):

@@ -89,10 +89,10 @@ class ChartDetectorTests(unittest.TestCase):
 
     def test_unknown_departure_is_not_scored(self):
         result = validate_zone_result({"zones": [{
-            "direction": "SUPPLY", "bbox": [0.2, 0.3, 0.4, 0.4],
-            "departure": "uncertain", "boundary_status": "clear",
+            "direction": "SUPPLY", "origin_candle_index": 5,
+            "departure": "uncertain",
             "confidence": 0.9, "evidence": "Cannot classify"
-        }]}, BARS, CAL)
+        }]}, BARS)
         self.assertEqual(result, [])
 
     def test_invalid_schema_is_rejected(self):

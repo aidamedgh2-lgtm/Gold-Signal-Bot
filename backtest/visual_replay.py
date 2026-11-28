@@ -130,6 +130,13 @@ def main():
         record["mtf_aligned_timeframes"] = aligned["aligned_timeframes"]
         record["mtf_matched_lower_timeframes"] = aligned["matched_lower_timeframes"]
         record["mtf_points"] = aligned["points"]
+        record["mtf_eligible"] = bool(
+            aligned["eligible"] and record.get("status") == "TWO_AI_AGREE"
+        )
+        record["mtf_rejection_reason"] = (
+            "" if record["mtf_eligible"] else
+            (aligned["rejection_reason"] or "visual_review_not_agreed")
+        )
     OUT.mkdir(exist_ok=True)
     (OUT/"replay.json").write_text(json.dumps(records,ensure_ascii=False,indent=2),encoding="utf-8")
     fields=sorted({k for r in records for k in r})

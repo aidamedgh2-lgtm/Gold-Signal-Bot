@@ -43,7 +43,7 @@ def fetch(interval, delta, days, now):
     if len(bars)<20: raise RuntimeError(f"Insufficient closed {interval} candles: {len(bars)}")
     # Fail closed if the provider silently truncates the requested lookback.
     if bars[0]["time"] > start.strftime("%Y-%m-%d %H:%M:%S"):
-        oldest=dt.datetime.strptime(bars[0]["time"],"%Y-%m-%d %H:%M:%S").replace(tzinfo=dt.timezone.utc)
+        oldest=parse_utc(bars[0]["time"])
         if oldest-start > delta*2:
             raise RuntimeError(f"{interval}: incomplete {days}-day coverage; oldest candle is {oldest.isoformat()}")
     return bars

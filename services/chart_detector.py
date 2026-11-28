@@ -71,10 +71,12 @@ def render_market_chart(bars, timeframe):
     calibration.update({
         "image_width": crop_right - crop_left,
         "image_height": crop_bottom - crop_top,
-        "axes_left": float(axes.x0 - crop_left),
-        "axes_right": float(axes.x1 - crop_left),
-        "axes_bottom": float(axes.y0 - (height_px - crop_bottom)),
-        "axes_top": float(axes.y1 - (height_px - crop_bottom)),
+        # The crop boundaries are rounded outward to whole pixels; treating
+        # that sub-pixel fringe as plot area avoids a false out-of-axes rejection.
+        "axes_left": 0.0,
+        "axes_right": float(crop_right - crop_left),
+        "axes_bottom": 0.0,
+        "axes_top": float(crop_bottom - crop_top),
     })
     return cropped.getvalue(), calibration
 

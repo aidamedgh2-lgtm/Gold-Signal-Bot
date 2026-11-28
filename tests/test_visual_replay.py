@@ -39,7 +39,7 @@ class VisualReplayFetchTests(unittest.TestCase):
 
     def test_keeps_latest_closed_candle_without_double_dropping(self):
         now = dt.datetime(2026, 11, 28, 10, 40, tzinfo=dt.timezone.utc)
-        with patch("visual_replay_under_test.urllib.request.urlopen", return_value=FakeResponse({"values": self._values(now)})):
+        with patch.object(visual_replay.urllib.request, "urlopen", return_value=FakeResponse({"values": self._values(now)})):
             bars = fetch("15min", "M15", 2, now)
         times = [bar["time"] for bar in bars]
         self.assertIn("2026-11-28 10:15:00", times)
@@ -47,7 +47,7 @@ class VisualReplayFetchTests(unittest.TestCase):
 
     def test_rejects_invalid_ohlc_order(self):
         now = dt.datetime(2026, 11, 28, 10, 40, tzinfo=dt.timezone.utc)
-        with patch("visual_replay_under_test.urllib.request.urlopen", return_value=FakeResponse({"values": self._values(now, invalid=True)})):
+        with patch.object(visual_replay.urllib.request, "urlopen", return_value=FakeResponse({"values": self._values(now, invalid=True)})):
             with self.assertRaisesRegex(RuntimeError, "invalid OHLC ordering"):
                 fetch("15min", "M15", 2, now)
 

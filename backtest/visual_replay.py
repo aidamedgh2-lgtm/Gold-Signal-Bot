@@ -8,8 +8,8 @@ from services.vision_review import assess_candidate
 
 API="https://api.twelvedata.com/time_series"
 KEY=os.environ.get("TWELVEDATA_API_KEY","").strip()
-AI=os.environ.get("OPENAI_API_KEY","").strip()
-MODEL=os.environ.get("OPENAI_VISION_MODEL","gpt-4.1-mini")
+AI=os.environ.get("GEMINI_API_KEY","").strip()
+MODEL=os.environ.get("GEMINI_VISION_MODEL","gemini-3.5-flash-lite")
 SYMBOL="XAU/USD"
 TFS=[("15min","M15",dt.timedelta(minutes=15)),("1h","H1",dt.timedelta(hours=1)),("4h","H4",dt.timedelta(hours=4)),("1day","D1",dt.timedelta(days=1))]
 OUT=Path("visual_replay_results")
@@ -64,7 +64,7 @@ def fetch(interval, delta, days, now):
     return bars
 
 def main():
-    if not KEY or not AI: raise SystemExit("Missing TWELVEDATA_API_KEY or OPENAI_API_KEY")
+    if not KEY or not AI: raise SystemExit("Missing TWELVEDATA_API_KEY or GEMINI_API_KEY")
     days=int(os.getenv("REPLAY_DAYS") or "30"); n=int(os.getenv("REPLAY_SNAPSHOTS") or "6")
     if not 7<=days<=90 or not 2<=n<=12: raise SystemExit("Invalid replay window/snapshot count")
     now=dt.datetime.now(dt.timezone.utc); histories={}
@@ -98,7 +98,7 @@ def main():
         w=csv.DictWriter(f,fieldnames=fields); w.writeheader(); w.writerows(records)
     counts={}
     for r in records: counts[r["status"]]=counts.get(r["status"],0)+1
-    summary={"provider":"Twelve Data","symbol":SYMBOL,"days":days,"checkpoints":n,"model":MODEL,"records":len(records),"status_counts":counts,"warning":"Visual detector/reviewer replay only; NOT a strategy P/L backtest. No profitability inferred."}
+    summary={"provider":"Twelve Data","vision_provider":"Google Gemini API","symbol":SYMBOL,"days":days,"checkpoints":n,"model":MODEL,"records":len(records),"status_counts":counts,"warning":"Visual detector/reviewer replay only; NOT a strategy P/L backtest. No profitability inferred."}
     (OUT/"summary.json").write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding="utf-8")
     print(json.dumps(summary,ensure_ascii=False,indent=2))
 if __name__=="__main__": main()

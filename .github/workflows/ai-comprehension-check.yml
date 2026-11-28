@@ -1,0 +1,36 @@
+name: AI strategy comprehension check
+
+on:
+  push:
+    branches: [ai-comprehension-check]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  comprehension:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ai-comprehension-check
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run controlled AI comprehension cases
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_VISION_MODEL: gemini-3.5-flash-lite
+        run: python -m tests.ai_comprehension
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-strategy-comprehension-report
+          path: ai_comprehension_results/
+          if-no-files-found: warn
+          retention-days: 30

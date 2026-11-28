@@ -32,7 +32,7 @@ def render_market_chart(bars, timeframe):
     step = max(1, len(bars)//10)
     ticks = list(range(0, len(bars), step))
     ax.set_xticks(ticks)
-    ax.set_xticklabels([str(bars[i]["time"]) for i in ticks],
+    ax.set_xticklabels([f"{i} | {bars[i]['time']}" for i in ticks],
                        rotation=35, ha="right", fontsize=8)
     ax.set_ylabel("XAU/USD price")
     ax.set_xlabel("Closed candle index and timestamp")
@@ -119,7 +119,12 @@ def map_normalized_bbox_to_market(bbox, calibration, bars):
     }
 
 
-def validate_zone_result(payload, bars, calibration):
+def validate_zone_result(payload, bars, calibration=None):
+    """Accept only a visually identified final pre-impulse candle.
+
+    The model selects a candle index and impulse direction. Zone prices are
+    taken mechanically from that candle's full wick range (low/high).
+    """
     if not isinstance(payload, dict) or not isinstance(payload.get("zones"), list):
         raise ValueError("Vision output must contain a zones array")
     accepted = []
@@ -127,11 +132,19 @@ def validate_zone_result(payload, bars, calibration):
         if not isinstance(item, dict):
             raise ValueError("Each zone must be an object")
         direction, departure = item.get("direction"), item.get("departure")
+        index = item.get("origin_candle_index")
         if direction not in DIRECTIONS or departure not in DEPARTURES:
             raise ValueError("Invalid direction or departure label")
-        if item.get("boundary_status") != "clear" or departure == "uncertain":
+        if isinstance(index, bool) or not isinstance(index, int):
+            raise ValueError("origin_candle_index must be an integer")
+        if not 0 <= index < len(bars):
+            raise ValueError("origin_candle_index is outside supplied candles")
+        if departure != "sharp":
             continue
-        mapped = map_normalized_bbox_to_market(item.get("bbox"), calibration, bars)
+        candle = bars[index]
+        low, high = float(candle["low"]), float(candle["high"])
+        if not (math.isfinite(low) and math.isfinite(high) and low < high):
+            raise ValueError("Origin candle has invalid OHLC boundaries")
         confidence = item.get("confidence")
         if (isinstance(confidence, bool) or not isinstance(confidence, (int, float))
                 or not math.isfinite(confidence) or not 0 <= confidence <= 1):
@@ -140,12 +153,15 @@ def validate_zone_result(payload, bars, calibration):
         if not isinstance(evidence, str) or not evidence.strip():
             raise ValueError("Visual evidence is required")
         accepted.append({
-            "direction": direction, **mapped, "departure": departure,
+            "direction": direction, "low": low, "high": high,
+            "origin_start": candle["time"], "origin_end": candle["time"],
+            "origin_start_index": index, "origin_end_index": index,
+            "origin_candle_index": index, "departure": "sharp",
             "confidence": float(confidence), "evidence": evidence[:500],
-            "boundary_status": "clear", "image_bbox_normalized": item["bbox"],
+            "boundary_status": "clear",
+            "boundary_method": "origin_candle_full_wick_low_high",
         })
     return accepted
-
 
 def detect_visual_zones(bars, timeframe, api_key, model="gemini-3.5-flash-lite"):
     if not api_key:
@@ -153,31 +169,33 @@ def detect_visual_zones(bars, timeframe, api_key, model="gemini-3.5-flash-lite")
     png, calibration = render_market_chart(bars, timeframe)
     prompt = (
         "Act only as a visual annotator for the user's original Supply & Demand "
-        "method. Identify only clearly visible demand/supply origin zones with "
-        "a departure. Return each zone as bbox=[x_min,y_min,x_max,y_max] normalized "
-        "to the FULL attached image (0..1), origin base rectangle only. The "
-        "attached image has already been cropped to the plotting axes, so its full "
-        "width and height are the candle plot. Image coordinates start at top-left. "
-        "Demand is a base "
-        "at a low followed by upward departure; supply is a base at a high followed "
-        "by downward departure. Classify departure visually as sideways, diagonal, "
-        "sharp, or uncertain. If boundaries are unclear, set boundary_status=unclear. "
-        "Never estimate or output prices or timestamps. Do not use ATR, candle "
-        "thresholds, or generic trading patterns. No score, entry, stop, target, "
-        "forecast, or recommendation. Empty array if no defensible zone.\\n\\n"
+        "method. Find only a clearly visible SHARP, strong, near-vertical upward "
+        "or downward impulse. Identify the LAST SINGLE CANDLE immediately before "
+        "that impulse begins, not a multi-candle base and not a candle inside the "
+        "impulse. Return origin_candle_index as the integer candle index shown "
+        "on the chart x-axis. Demand means the final candle before a sharp upward "
+        "impulse from a low; supply means the final candle before a sharp downward "
+        "impulse from a high. X-axis ticks are labelled 'index | timestamp'; count "
+        "candle positions between labelled ticks to locate the exact candle. "
+        "Return departure='sharp' only for the visually steep/near-vertical move "
+        "described in the PDF. Do not return bbox, prices, timestamps, or zone "
+        "thickness. Software sets zone low/high exactly to that candle's wick "
+        "low/high. Never include neighboring candles. Do not use ATR, OHLC "
+        "thresholds, or generic patterns to decide if the impulse is sharp. If "
+        "origin candle or impulse direction is ambiguous, return no zone. No "
+        "score, entry, stop, target, forecast, or recommendation. Empty array "
+        "when no defensible sharp impulse exists.\\n\\n"
         "GOVERNING PDF STRATEGY REFERENCE:\\n" + _load_reference()
     )
     schema = {
         "type": "object", "properties": {"zones": {"type": "array", "items": {
             "type": "object", "properties": {
                 "direction": {"type": "string", "enum": ["DEMAND", "SUPPLY"]},
-                "bbox": {"type": "array", "items": {"type": "number"},
-                         "minItems": 4, "maxItems": 4},
-                "departure": {"type": "string", "enum": sorted(DEPARTURES)},
-                "boundary_status": {"type": "string", "enum": ["clear", "unclear"]},
+                "origin_candle_index": {"type": "integer", "minimum": 0},
+                "departure": {"type": "string", "enum": ["sharp"]},
                 "confidence": {"type": "number", "minimum": 0, "maximum": 1},
                 "evidence": {"type": "string"}
-            }, "required": ["direction", "bbox", "departure", "boundary_status",
+            }, "required": ["direction", "origin_candle_index", "departure",
                             "confidence", "evidence"], "additionalProperties": False
         }}}, "required": ["zones"], "additionalProperties": False
     }

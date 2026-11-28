@@ -2,7 +2,9 @@ name: PDF strategy visual historical replay
 
 on:
   push:
-    branches: [validation/golden-case-baseline]
+    branches:
+      - validation/golden-case-baseline
+      - ai-comprehension-check
   workflow_dispatch:
     inputs:
       replay_days:
@@ -32,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: validation/golden-case-baseline
+          ref: ${{ github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -45,8 +47,8 @@ jobs:
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_VISION_MODEL: gemini-3.5-flash-lite
-          REPLAY_DAYS: ${{ inputs.replay_days }}
-          REPLAY_SNAPSHOTS: ${{ inputs.replay_snapshots }}
+          REPLAY_DAYS: ${{ inputs.replay_days || '30' }}
+          REPLAY_SNAPSHOTS: ${{ inputs.replay_snapshots || '6' }}
         run: python -m backtest.visual_replay
       - name: Upload replay evidence
         uses: actions/upload-artifact@v4

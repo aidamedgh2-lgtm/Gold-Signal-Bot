@@ -182,22 +182,22 @@ def detect_visual_zones(bars, timeframe, api_key, model="gemini-3.5-flash-lite")
     png, calibration = render_market_chart(bars, timeframe)
     prompt = (
         "Act only as a visual annotator for the user's original Supply & Demand "
-        "method. Find only a clearly visible SHARP, strong, near-vertical upward "
-        "or downward impulse. Identify the LAST SINGLE CANDLE immediately before "
-        "that impulse begins, not a multi-candle base and not a candle inside the "
+        "method. Inspect the visible directional move and classify its shape as sharp, diagonal, sideways, or uncertain. "
+        "or downward impulse. Identify the LAST CANDLE immediately before "
+        "that impulse begins, not a candle inside the "
         "impulse. Return origin_candle_index as the integer candle index shown "
         "on the chart x-axis. Demand means the final candle before a sharp upward "
         "impulse from a low; supply means the final candle before a sharp downward "
         "impulse from a high. X-axis ticks are labelled with candle indices; count "
         "candle positions between labelled ticks to locate the exact candle. "
-        "Return departure='sharp' only for the visually steep/near-vertical move "
-        "described in the PDF. Do not return bbox, prices, timestamps, or zone "
-        "thickness. Software sets zone low/high exactly to that candle's wick "
-        "low/high. Never include neighboring candles. Do not use ATR, OHLC "
-        "thresholds, or generic patterns to decide if the impulse is sharp. If "
+        "Return the visual departure class faithfully; do not require sharp-only classification. "
+        "Do not return bbox, prices, timestamps, or zone "
+        "thickness. Software sets the anchor range from that candle using ZONE_BOUNDARY_MODE: wick=Low..High, body=min(Open,Close)..max(Open,Close). Reuse this higher-timeframe range for lower-timeframe matching. "
+        "Never include neighboring candles or invent a price buffer. Do not use ATR, OHLC "
+        "thresholds to classify the visual impulse shape. If "
         "origin candle or impulse direction is ambiguous, return no zone. No "
         "score, entry, stop, target, forecast, or recommendation. Empty array "
-        "when no defensible sharp impulse exists.\\n\\n"
+        "when no defensible directional candidate exists.\\n\\n"
         "GOVERNING PDF STRATEGY REFERENCE:\\n" + _load_reference()
     )
     schema = {

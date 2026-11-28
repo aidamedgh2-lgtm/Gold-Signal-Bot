@@ -2,7 +2,7 @@ name: Validate bot code
 
 on:
   push:
-    branches: [main, ai/vision-chart-review-v1, validation/golden-case-baseline]
+    branches: [main, ai/vision-chart-review-v1, validation/golden-case-baseline, ai-comprehension-check]
   pull_request:
     branches: [main, cleanup/clean-base, ai/vision-chart-review-v1]
   workflow_dispatch:

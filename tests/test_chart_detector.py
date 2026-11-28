@@ -43,23 +43,41 @@ class ChartDetectorTests(unittest.TestCase):
         self.assertEqual(mapped["origin_start"], BARS[2]["time"])
         self.assertEqual(mapped["origin_end"], BARS[8]["time"])
 
-    def test_clear_zone_is_accepted_after_calibration(self):
+    def test_zone_uses_exact_last_pre_impulse_candle_wick_range(self):
         result = validate_zone_result({"zones": [{
-            "direction": "DEMAND", "bbox": [0.2, 0.3, 0.4, 0.4],
-            "departure": "sharp", "boundary_status": "clear",
-            "confidence": 0.88, "evidence": "Visible base and sharp departure"
-        }]}, BARS, CAL)
+            "direction": "DEMAND", "origin_candle_index": 7,
+            "departure": "sharp", "confidence": 0.88,
+            "evidence": "Final candle before a visually sharp upward impulse"
+        }]}, BARS)
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["direction"], "DEMAND")
-        self.assertAlmostEqual(result[0]["high"], 75.0)
+        self.assertEqual(result[0]["origin_candle_index"], 7)
+        self.assertEqual(result[0]["low"], BARS[7]["low"])
+        self.assertEqual(result[0]["high"], BARS[7]["high"])
+        self.assertEqual(result[0]["origin_start"], BARS[7]["time"])
+        self.assertEqual(result[0]["origin_end"], BARS[7]["time"])
+        self.assertEqual(result[0]["boundary_method"],
+                         "origin_candle_full_wick_low_high")
 
-    def test_unclear_zone_is_rejected_not_guessed(self):
-        result = validate_zone_result({"zones": [{
-            "direction": "DEMAND", "bbox": [0.2, 0.3, 0.4, 0.4],
-            "departure": "sharp", "boundary_status": "unclear",
-            "confidence": 0.99, "evidence": "Ambiguous edges"
-        }]}, BARS, CAL)
-        self.assertEqual(result, [])
+    def test_only_sharp_departure_is_accepted(self):
+        for departure in ("sideways", "diagonal", "uncertain"):
+            with self.subTest(departure=departure):
+                result = validate_zone_result({"zones": [{
+                    "direction": "DEMAND", "origin_candle_index": 7,
+                    "departure": departure, "confidence": 0.99,
+                    "evidence": "Not a sharp departure"
+                }]}, BARS)
+                self.assertEqual(result, [])
+
+    def test_invalid_origin_index_is_rejected(self):
+        for index in (-1, len(BARS), True, 2.5):
+            with self.subTest(index=index):
+                with self.assertRaises(ValueError):
+                    validate_zone_result({"zones": [{
+                        "direction": "SUPPLY", "origin_candle_index": index,
+                        "departure": "sharp", "confidence": 0.9,
+                        "evidence": "Visible impulse"
+                    }]}, BARS)
 
     def test_zone_outside_plot_axes_is_rejected(self):
         with self.assertRaises(ValueError):

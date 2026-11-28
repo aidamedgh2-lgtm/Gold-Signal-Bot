@@ -4,6 +4,7 @@ Vision selects the candle index; exact zone prices come from that candle OHLC.
 """
 import io
 import math
+import os
 from PIL import Image
 from services.gemini_http import generate_json
 
@@ -119,7 +120,15 @@ def map_normalized_bbox_to_market(bbox, calibration, bars):
     }
 
 
-def validate_zone_result(payload, bars, calibration=None):
+def validate_zone_result(payload, bars, calibration=None, boundary_mode=None):
+    """Extract anchor bounds from the last candle before the impulse.
+
+    boundary_mode: wick (Low..High) or body (min(Open,Close)..max).
+    Defaults to ZONE_BOUNDARY_MODE, then wick.
+    """
+    boundary_mode = (boundary_mode or os.getenv("ZONE_BOUNDARY_MODE", "wick")).strip().lower()
+    if boundary_mode not in ("wick", "body"):
+        raise ValueError("ZONE_BOUNDARY_MODE must be 'wick' or 'body'")
     """Accept only a visually identified final pre-impulse candle.
 
     The model selects a candle index and impulse direction. Zone prices are
@@ -145,9 +154,14 @@ def validate_zone_result(payload, bars, calibration=None):
         if departure in ("sideways", "uncertain"):
             continue
         candle = bars[index]
-        low, high = float(candle["low"]), float(candle["high"])
+        if boundary_mode == "wick":
+            low, high = float(candle["low"]), float(candle["high"])
+            boundary_method = "origin_candle_wick_low_high"
+        else:
+            low, high = sorted((float(candle["open"]), float(candle["close"])))
+            boundary_method = "origin_candle_body_open_close"
         if not (math.isfinite(low) and math.isfinite(high) and low < high):
-            raise ValueError("Origin candle has invalid OHLC boundaries")
+            raise ValueError("Origin candle has invalid boundaries for selected mode")
         confidence = item.get("confidence")
         if (isinstance(confidence, bool) or not isinstance(confidence, (int, float))
                 or not math.isfinite(confidence) or not 0 <= confidence <= 1):
@@ -162,7 +176,8 @@ def validate_zone_result(payload, bars, calibration=None):
             "origin_candle_index": index, "departure": departure,
             "confidence": float(confidence), "evidence": evidence[:500],
             "boundary_status": "clear",
-            "boundary_method": "origin_candle_full_wick_low_high",
+            "boundary_method": boundary_method,
+            "boundary_mode": boundary_mode,
         })
     return accepted
 

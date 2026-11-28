@@ -81,7 +81,7 @@ def main():
             window=available[-180:]
             try:
                 zones=detect_visual_zones(window,label,AI,MODEL)
-                time.sleep(2)
+                time.sleep(4.5)
                 if not zones: records.append({"checkpoint":idx,"time_utc":point.isoformat(),"tf":label,"status":"NO_CLEAR_ZONE"})
                 for z in zones:
                     candidate={**z,"tf":label,"created":z["origin_start"]}

@@ -121,7 +121,7 @@ def map_normalized_bbox_to_market(bbox, calibration, bars):
 
 
 def validate_zone_result(payload, bars, calibration=None, boundary_mode=None):
-    """Extract anchor bounds from the last candle before the impulse.
+    """Select the last pre-impulse candle and calculate its configured range.
 
     boundary_mode: wick (Low..High) or body (min(Open,Close)..max).
     Defaults to ZONE_BOUNDARY_MODE, then wick.
@@ -129,11 +129,6 @@ def validate_zone_result(payload, bars, calibration=None, boundary_mode=None):
     boundary_mode = (boundary_mode or os.getenv("ZONE_BOUNDARY_MODE", "wick")).strip().lower()
     if boundary_mode not in ("wick", "body"):
         raise ValueError("ZONE_BOUNDARY_MODE must be 'wick' or 'body'")
-    """Accept only a visually identified final pre-impulse candle.
-
-    The model selects a candle index and impulse direction. Zone prices are
-    taken mechanically from that candle's full wick range (low/high).
-    """
     if not isinstance(payload, dict) or not isinstance(payload.get("zones"), list):
         raise ValueError("Vision output must contain a zones array")
     accepted = []

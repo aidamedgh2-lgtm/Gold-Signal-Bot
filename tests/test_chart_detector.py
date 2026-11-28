@@ -55,7 +55,24 @@ class ChartDetectorTests(unittest.TestCase):
         self.assertEqual(result[0]["origin_start"], BARS[7]["time"])
         self.assertEqual(result[0]["origin_end"], BARS[7]["time"])
         self.assertEqual(result[0]["boundary_method"],
-                         "origin_candle_full_wick_low_high")
+                         "origin_candle_wick_low_high")
+        self.assertEqual(result[0]["boundary_mode"], "wick")
+
+
+    def test_zone_body_mode_uses_open_close_only(self):
+        result = validate_zone_result({"zones": [{
+            "direction": "DEMAND", "origin_candle_index": 7,
+            "departure": "sharp", "confidence": 0.88,
+            "evidence": "Last candle before strong upward impulse"
+        }]}, BARS, boundary_mode="body")
+        self.assertEqual(result[0]["low"], min(BARS[7]["open"], BARS[7]["close"]))
+        self.assertEqual(result[0]["high"], max(BARS[7]["open"], BARS[7]["close"]))
+        self.assertEqual(result[0]["boundary_mode"], "body")
+        self.assertEqual(result[0]["boundary_method"], "origin_candle_body_open_close")
+
+    def test_invalid_boundary_mode_is_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_zone_result({"zones": []}, BARS, boundary_mode="atr")
 
     def test_diagonal_is_retained_for_lower_timeframe_confirmation(self):
         result = validate_zone_result({"zones": [{

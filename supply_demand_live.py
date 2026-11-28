@@ -56,6 +56,9 @@ def fetch(interval):
     bars = [{"time": x["datetime"], **{k: float(x[k]) for k in ("open","high","low","close")}}
             for x in payload["values"]]
     bars.sort(key=lambda x: x["time"])
+    timestamps = [bar["time"] for bar in bars]
+    if len(set(timestamps)) != len(timestamps):
+        raise RuntimeError(f"شموع مكررة في بيانات {interval}")
     # تجاهل الشمعة الأحدث لاحتمال عدم اكتمالها
     if len(bars) > 1:
         bars = bars[:-1]
@@ -80,6 +83,18 @@ def atr(bars, period=14):
     return value if value > 0 else None
 
 
+def departure_window(bars, end, window=5):
+    """Return a complete, fixed-size post-base window or None if not enough closed bars exist."""
+    if end < 0 or len(bars) - end < window:
+        return None
+    return bars[end:end + window]
+
+
+def base_duration_points(count):
+    """Reward a multi-candle base; a one-candle pause earns no duration point."""
+    return 1 if count >= 2 else 0
+
+
 def detect_zones(bars, tf):
     """اكتشاف قاعدة قصيرة تليها إزاحة سعرية؛ لا يستخدم بيانات مستقبلية بعد شمعة الانطلاق."""
     zones = []
@@ -87,7 +102,9 @@ def detect_zones(bars, tf):
     if not a:
         return zones
     start = max(BASE_MAX + 2, len(bars) - SCAN_BARS)
-    for end in range(start, len(bars) - 2):
+    # Require five complete, closed candles after the base. The same five bars
+    # are used for displacement, candle-body ratio, and revisit boundary.
+    for end in range(start, len(bars) - 4):
         for count in range(BASE_MIN, BASE_MAX + 1):
             s = end - count
             base = bars[s:end]
@@ -95,10 +112,10 @@ def detect_zones(bars, tf):
             base_range = max(x["high"] for x in base) - min(x["low"] for x in base)
             if base_range > max(0.9 * a, 0.0):
                 continue
-            departure = bars[end:min(end+6, len(bars))]
-            if len(departure) < 2:
+            departure = departure_window(bars, end, 5)
+            if departure is None:
                 continue
-            # قياس أقوى ابتعاد خلال أول خمس شمعات بعد القاعدة
+            # Measure displacement over exactly the same five post-base candles.
             up = max(x["close"] for x in departure) - base_mid
             down = base_mid - min(x["close"] for x in departure)
             direction = "DEMAND" if up >= down else "SUPPLY"
@@ -125,7 +142,7 @@ def detect_zones(bars, tf):
                 zhi = max(x["high"] for x in base)
             if zhi <= zlo:
                 continue
-            departure_end = min(end + 5, len(bars)-1)
+            departure_end = end + 4
             visits = 0
             was_inside = False
             for x in bars[departure_end+1:]:
@@ -134,7 +151,7 @@ def detect_zones(bars, tf):
                     visits += 1
                 was_inside = inside
             visit_points = 2 if visits == 0 else (1 if visits == 1 else 0)
-            duration_points = 1 if count <= 4 else 0
+            duration_points = base_duration_points(count)
             # سرعة الاقتراب: انتقال لا يقل عن 1 ATR خلال ثلاث شمعات قبل لمس المنطقة
             last = bars[-1]
             recent = bars[-4:-1]
@@ -173,6 +190,33 @@ def detect_zones(bars, tf):
         subset = [z for z in zones if z["direction"] == direction]
         result.extend(subset[-8:])
     return result
+
+
+def apply_opposing_zone_rr(zone, all_zones):
+    """Score RR to the nearest opposing zone; no historical-extrema substitute."""
+    entry = (zone["low"] + zone["high"]) / 2
+    if "stop" not in zone:
+        zone.update({"target": None, "rr": 0.0, "rr_points": 0})
+        return zone
+    stop = zone["stop"]
+    risk = abs(entry - stop)
+    if risk <= 0:
+        zone.update({"target": None, "rr": 0.0, "rr_points": 0})
+        return zone
+    if zone["direction"] == "DEMAND":
+        targets = [x["low"] for x in all_zones
+                   if x is not zone and x["direction"] == "SUPPLY" and x["low"] > entry]
+        target = min(targets) if targets else None
+        reward = target - entry if target is not None else 0.0
+    else:
+        targets = [x["high"] for x in all_zones
+                   if x is not zone and x["direction"] == "DEMAND" and x["high"] < entry]
+        target = max(targets) if targets else None
+        reward = entry - target if target is not None else 0.0
+    rr = reward / risk if reward > 0 else 0.0
+    points = 2 if rr >= 3.0 else (1 if rr >= 2.0 else 0)
+    zone.update({"target": target, "rr": rr, "rr_points": points})
+    return zone
 
 
 def overlaps(a, b):
@@ -306,6 +350,7 @@ def main():
             continue
         if z["direction"] == "SUPPLY" and price > z["high"]+0.15*z["atr"]:
             continue
+        apply_opposing_zone_rr(z, all_zones)
         matches = [x for x in all_zones if x is not z and x["direction"] == z["direction"]
                    and x["tf"] != z["tf"] and overlaps(z,x)
                    and max(x["low"]-price, 0, price-x["high"]) <= MAX_NEAR_ATR*x["atr"]
@@ -348,35 +393,22 @@ def main():
                  + score_lines + 'لا توجد صفقة. ننتظر تحسن المنطقة/تأكيد الدخول.\n' + comex_note)
             seen[zone_id] = "monitor"
     else:
-        confirm = confirmation(m15, best)
-        # شمعة التأكيد M15 مطلوبة بعد أن يلمس السعر المنطقة.
-        if confirm:
-            entry = m15[-1]["close"]
-            stop = best["stop"]
-            risk = abs(entry-stop)
-            if risk <= 0:
-                print("مخاطرة غير صالحة؛ لا إشارة.")
-                return
-            tp1 = entry + (1.5*risk if best["direction"] == "DEMAND" else -1.5*risk)
-            tp2 = entry + (2.5*risk if best["direction"] == "DEMAND" else -2.5*risk)
-            tp3 = entry + (3.0*risk if best["direction"] == "DEMAND" else -3.0*risk)
-            direction = "BUY" if best["direction"] == "DEMAND" else "SELL"
-            signal_key = zone_id + ":" + m15[-1]["time"]
-            if seen.get(zone_id) != "signal" and state.get("last_signal_key") != signal_key:
-                send(f'🚨 توصية {direction} — XAU/USD\nالاستراتيجية: Supply & Demand\n'
-                     f'المنطقة: {best["low"]:.2f} – {best["high"]:.2f} ({best["tf"]})\n'
-                     f'شمعة التأكيد: {confirm} على M15\nالتقييم: {best["score"]}/10\n'
-                     + score_lines +
-                     f'Entry: {entry:.2f}\nSL: {stop:.2f}\nTP1: {tp1:.2f}\n'
-                     f'TP2: {tp2:.2f}\nTP3: {tp3:.2f}\n'
-                     + comex_note + '\nالدخول بعد إغلاق شمعة التأكيد؛ هذه إشارة تنبيه وليست أمراً منفذاً.')
-                seen[zone_id] = "signal"
-                state["last_signal_key"] = signal_key
-        elif seen.get(zone_id) not in ("strong_wait", "signal"):
-            send(f'⭐ منطقة قوية — XAU/USD\nالفريم: {best["tf"]}\n'
-                 f'المنطقة: {best["low"]:.2f} – {best["high"]:.2f}\nالتقييم: {best["score"]}/10\n'
-                 + score_lines + 'انتظار وصول السعر إلى المنطقة ثم شمعة تأكيد M15. لا دخول الآن.\n' + comex_note)
-            seen[zone_id] = "strong_wait"
+        target = best.get("target")
+        if target is None:
+            print("لا توجد منطقة مقابلة صالحة لتحديد الهدف؛ لا تنبيه أمر معلّق.")
+            return
+        direction = "BUY" if best["direction"] == "DEMAND" else "SELL"
+        if seen.get(zone_id) != "pending_candidate":
+            send(f'📌 فرصة مؤهلة لأمر معلّق مقترح — {direction} XAU/USD\n'
+                 f'المنطقة: {best["low"]:.2f} – {best["high"]:.2f} ({best["tf"]})\n'
+                 f'التقييم: {best["score"]}/10\n' + score_lines +
+                 f'نطاق الدخول المقترح: {best["low"]:.2f} – {best["high"]:.2f}\n'
+                 f'SL: {best["stop"]:.2f}\n'
+                 f'الهدف: المنطقة المقابلة عند {target:.2f}\n'
+                 f'R:R المحسوب: 1:{best["rr"]:.2f}\n'
+                 + comex_note +
+                 '\nتنبيه فقط؛ البوت لا يرسل أوامر إلى الوسيط. اختاري سعر الأمر داخل المنطقة وفق قواعد التنفيذ لديك.')
+            seen[zone_id] = "pending_candidate"
     state["sd_seen"] = seen
     STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f'Supply/Demand scan complete. Best zone score={best["score"]}/10, timeframe={best["tf"]}.')

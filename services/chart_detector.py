@@ -8,6 +8,7 @@ import io
 import json
 import math
 import urllib.request
+from services.openai_http import openai_urlopen
 
 import matplotlib
 matplotlib.use("Agg")
@@ -176,7 +177,7 @@ def detect_visual_zones(bars, timeframe, api_key, model="gpt-4.1-mini"):
         API_URL, data=json.dumps(body).encode("utf-8"),
         headers={"Authorization": "Bearer " + api_key,
                  "Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(request, timeout=60) as response:
+    with openai_urlopen(request, timeout=60) as response:
         result = json.loads(response.read().decode("utf-8"))
     raw = result.get("output_text")
     if not raw:

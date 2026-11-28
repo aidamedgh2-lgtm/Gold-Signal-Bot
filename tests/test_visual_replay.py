@@ -1,9 +1,15 @@
 import datetime as dt
+import importlib.util
 import json
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from backtest.visual_replay import fetch
+_path = Path(__file__).resolve().parents[1] / "backtest" / "visual_replay.py"
+_spec = importlib.util.spec_from_file_location("visual_replay_under_test", _path)
+visual_replay = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(visual_replay)
+fetch = visual_replay.fetch
 
 
 class FakeResponse:
@@ -15,32 +21,35 @@ class FakeResponse:
 
 
 class VisualReplayFetchTests(unittest.TestCase):
-    def test_keeps_latest_closed_candle_without_double_dropping(self):
-        now = dt.datetime(2026, 11, 28, 10, 40, tzinfo=dt.timezone.utc)
-        values = [
+    def _values(self, now, invalid=False):
+        delta = dt.timedelta(minutes=15)
+        first = now - dt.timedelta(days=2) + delta
+        values = []
+        for i in range(20):
+            stamp = first + i * delta
+            values.append({"datetime": stamp.strftime("%Y-%m-%d %H:%M:%S"),
+                "open": "10", "high": "8" if invalid else "12",
+                "low": "9", "close": "11"})
+        values.extend([
             {"datetime": "2026-11-28 10:30:00", "open": "10", "high": "12", "low": "9", "close": "11"},
             {"datetime": "2026-11-28 10:15:00", "open": "10", "high": "12", "low": "9", "close": "11"},
             {"datetime": "2026-11-28 10:00:00", "open": "10", "high": "12", "low": "9", "close": "11"},
-        ]
-        values += [
-            {"datetime": f"2026-11-27 {hour:02d}:00:00", "open": "10", "high": "12", "low": "9", "close": "11"}
-            for hour in range(20)
-        ]
-        with patch("backtest.visual_replay.urllib.request.urlopen", return_value=FakeResponse({"values": values})):
-            bars = fetch("15min", "M15", 1, now)
+        ])
+        return values
+
+    def test_keeps_latest_closed_candle_without_double_dropping(self):
+        now = dt.datetime(2026, 11, 28, 10, 40, tzinfo=dt.timezone.utc)
+        with patch("visual_replay_under_test.urllib.request.urlopen", return_value=FakeResponse({"values": self._values(now)})):
+            bars = fetch("15min", "M15", 2, now)
         times = [bar["time"] for bar in bars]
         self.assertIn("2026-11-28 10:15:00", times)
         self.assertNotIn("2026-11-28 10:30:00", times)
 
     def test_rejects_invalid_ohlc_order(self):
         now = dt.datetime(2026, 11, 28, 10, 40, tzinfo=dt.timezone.utc)
-        values = [
-            {"datetime": f"2026-11-27 {hour:02d}:00:00", "open": "10", "high": "8", "low": "9", "close": "11"}
-            for hour in range(20)
-        ]
-        with patch("backtest.visual_replay.urllib.request.urlopen", return_value=FakeResponse({"values": values})):
+        with patch("visual_replay_under_test.urllib.request.urlopen", return_value=FakeResponse({"values": self._values(now, invalid=True)})):
             with self.assertRaisesRegex(RuntimeError, "invalid OHLC ordering"):
-                fetch("15min", "M15", 1, now)
+                fetch("15min", "M15", 2, now)
 
 
 if __name__ == "__main__":

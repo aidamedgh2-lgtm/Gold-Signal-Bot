@@ -10,7 +10,7 @@ import urllib.request
 API_ROOT = "https://generativelanguage.googleapis.com/v1beta/models/"
 
 
-def generate_json(prompt, image_bytes, schema, api_key, model, timeout=60):
+def generate_json(prompt, image_bytes, schema, api_key, model, timeout=60, max_output_tokens=1800):
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is missing")
     if not isinstance(image_bytes, bytes) or not image_bytes:
@@ -33,7 +33,7 @@ def generate_json(prompt, image_bytes, schema, api_key, model, timeout=60):
         "generationConfig": {
             "responseMimeType": "application/json",
             "responseJsonSchema": schema,
-            "maxOutputTokens": 1800,
+            "maxOutputTokens": max_output_tokens,
         },
     }
     request = urllib.request.Request(

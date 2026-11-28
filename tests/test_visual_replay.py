@@ -53,9 +53,10 @@ class VisualReplayFetchTests(unittest.TestCase):
         histories = {}
         base = dt.datetime(2026, 10, 1, tzinfo=dt.timezone.utc)
         for interval, label, delta in visual_replay.TFS:
+            count = int(dt.timedelta(days=30) / delta) + 30
             histories[label] = [
                 {"time": (base + delta * i).strftime("%Y-%m-%d %H:%M:%S")}
-                for i in range(30)
+                for i in range(count)
             ]
         checkpoints = visual_replay.build_checkpoints(histories, 3)
         first = checkpoints[0]

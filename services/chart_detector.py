@@ -29,11 +29,12 @@ def render_market_chart(bars, timeframe):
         ax.vlines(i, bar["low"], bar["high"], linewidth=0.9)
         ax.add_patch(Rectangle((i-width/2, bottom), width, height,
                                fill=up, alpha=0.75, linewidth=0.65))
-    step = max(1, len(bars)//10)
+    # Show compact candle indices often enough for visual index selection.
+    step = max(1, len(bars)//30)
     ticks = list(range(0, len(bars), step))
     ax.set_xticks(ticks)
-    ax.set_xticklabels([f"{i} | {bars[i]['time']}" for i in ticks],
-                       rotation=35, ha="right", fontsize=8)
+    ax.set_xticklabels([str(i) for i in ticks],
+                       rotation=90, ha="center", fontsize=7)
     ax.set_ylabel("XAU/USD price")
     ax.set_xlabel("Closed candle index and timestamp")
     ax.set_title(f"XAU/USD {timeframe} — closed candles")

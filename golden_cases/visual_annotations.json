@@ -1,0 +1,173 @@
+{
+  "schema_version": "1.0",
+  "coordinate_system": {
+    "source": "Original PDF rendered with PyMuPDF at 1.5x",
+    "page_width_px": 918,
+    "page_height_px": 1188,
+    "bbox_format": "[x_min,y_min,x_max,y_max] in source-page pixels; normalized values are pixel coordinates divided by page dimensions",
+    "precision_note": "Manual visual annotations of clearly drawn coloured/outlined shapes; not price-coordinate reconstruction."
+  },
+  "annotations": [
+    {
+      "case_id": "PDF-DEPARTURE-CHART-01",
+      "source_page": 34,
+      "role": "departure_path",
+      "image_bbox_px": [
+        575,
+        824,
+        626,
+        1010
+      ],
+      "expected_class": "steep_or_near_vertical",
+      "expected_points": 2,
+      "zone_bbox_px": null,
+      "status": "path_annotated_zone_unresolved",
+      "evidence": "Green departure stroke rises sharply from the local low; no explicit coloured zone rectangle on this page."
+    },
+    {
+      "case_id": "PDF-DEPARTURE-CHART-02",
+      "source_page": 35,
+      "role": "departure_and_origin_zone",
+      "image_bbox_px": [
+        373,
+        267,
+        400,
+        461
+      ],
+      "expected_class": "steep_or_near_vertical",
+      "expected_points": 2,
+      "zone_bbox_px": [
+        373,
+        438,
+        677,
+        461
+      ],
+      "status": "manually_annotated",
+      "evidence": "Green departure stroke rises sharply from the left edge of the green horizontal demand band."
+    },
+    {
+      "case_id": "PDF-MTF-01A-MONTHLY",
+      "source_page": 69,
+      "role": "timeframe_zone",
+      "timeframe_label": "MN1 as described in adjacent source text; screenshot title appears D1, therefore timeframe label conflict retained",
+      "zone_bbox_px": [
+        188,
+        525,
+        544,
+        555
+      ],
+      "status": "boundary_pixels_annotated_timeframe_uncertain",
+      "evidence": "Cyan band at chart bottom. Do not infer timeframe from tab/title where it conflicts with the written instruction."
+    },
+    {
+      "case_id": "PDF-MTF-01A-WEEKLY",
+      "source_page": 72,
+      "role": "timeframe_zone",
+      "timeframe_label": "W1",
+      "zone_bbox_px": [
+        301,
+        287,
+        571,
+        325
+      ],
+      "status": "manually_annotated",
+      "evidence": "Blue zone with magenta edge highlights."
+    },
+    {
+      "case_id": "PDF-MTF-01A-DAILY",
+      "source_page": 73,
+      "role": "timeframe_zone",
+      "timeframe_label": "D1",
+      "zone_bbox_px": [
+        233,
+        237,
+        575,
+        284
+      ],
+      "status": "manually_annotated",
+      "evidence": "Green zone with magenta edge highlights."
+    },
+    {
+      "case_id": "PDF-MTF-01A-OTHER-FRAME",
+      "source_page": 71,
+      "role": "timeframe_zone",
+      "timeframe_label": "Uncertain; page sequence labels this as weekly step but chart title appears monthly",
+      "zone_bbox_px": [
+        313,
+        285,
+        555,
+        324
+      ],
+      "status": "boundary_pixels_annotated_timeframe_uncertain",
+      "evidence": "Magenta band; keep frame identity uncertain pending source-page text reconciliation."
+    },
+    {
+      "case_id": "PDF-APPROACH-01-FAST",
+      "source_page": 137,
+      "role": "return_path_schematic",
+      "zone_bbox_px": [
+        84,
+        432,
+        268,
+        456
+      ],
+      "path_bbox_px": [
+        103,
+        161,
+        151,
+        433
+      ],
+      "expected_class": "steep_fast",
+      "expected_points": 1,
+      "status": "manually_annotated_schematic",
+      "evidence": "Left schematic is explicitly labelled 1 point."
+    },
+    {
+      "case_id": "PDF-APPROACH-01-DIAGONAL",
+      "source_page": 137,
+      "role": "return_path_schematic",
+      "zone_bbox_px": [
+        318,
+        432,
+        528,
+        456
+      ],
+      "path_bbox_px": [
+        350,
+        164,
+        424,
+        429
+      ],
+      "expected_class": "stair_or_diagonal",
+      "expected_points": 0,
+      "status": "manually_annotated_schematic",
+      "evidence": "Middle schematic is explicitly labelled 0 points."
+    },
+    {
+      "case_id": "PDF-APPROACH-01-GRADUAL",
+      "source_page": 137,
+      "role": "return_path_schematic",
+      "zone_bbox_px": [
+        585,
+        432,
+        798,
+        456
+      ],
+      "path_bbox_px": [
+        638,
+        170,
+        775,
+        434
+      ],
+      "expected_class": "gradual_staircase",
+      "expected_points": 0,
+      "status": "manually_annotated_schematic",
+      "evidence": "Right schematic is explicitly labelled 0 points."
+    }
+  ],
+  "unresolved": [
+    "Do not convert any screenshot pixel coordinate into a market price without a legible calibrated price axis.",
+    "The PDF's timeframe label around pages 69–73 is not fully consistent between adjacent prose and screenshot titles; uncertain labels are intentionally preserved.",
+    "These hand annotations are seed examples; a second independent reviewer should verify chart-zone boundaries before they are used as final ground truth."
+  ]
+}

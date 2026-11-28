@@ -3,6 +3,7 @@ from strategy_fidelity import (
     approach_points, count_zone_visits, decision_for_score, departure_strength_points,
     duration_points, duration_points_by_timeframe, hierarchical_mtf_points,
     reward_risk_points, score_six_criteria, visit_points,
+    matching_lower_timeframes,
 )
 
 def bar(low, high):
@@ -33,6 +34,40 @@ class FidelityTests(unittest.TestCase):
         self.assertEqual(hierarchical_mtf_points(["MN1", "D1"]), 1)
         self.assertEqual(hierarchical_mtf_points(["H4", "H1"]), 1)
         self.assertEqual(hierarchical_mtf_points(["MN1", "D1", "H1"]), 2)
+
+    def test_lower_timeframe_confirmation_requires_same_direction_and_overlap(self):
+        parent = {"direction": "DEMAND", "low": 2300.0, "high": 2310.0}
+        candidates = {
+            "H1": [
+                {"direction": "DEMAND", "low": 2305.0, "high": 2315.0},
+            ],
+            "M15": [
+                {"direction": "DEMAND", "low": 2308.0, "high": 2312.0},
+            ],
+        }
+        result = matching_lower_timeframes("H4", parent, candidates)
+        self.assertEqual(result["aligned_timeframes"], ["H4", "H1", "M15"])
+        self.assertEqual(result["points"], 2)
+
+    def test_lower_timeframe_direction_or_zone_mismatch_does_not_confirm(self):
+        parent = {"direction": "DEMAND", "low": 2300.0, "high": 2310.0}
+        candidates = {
+            "H1": [{"direction": "SUPPLY", "low": 2305.0, "high": 2308.0}],
+            "M15": [{"direction": "DEMAND", "low": 2311.0, "high": 2315.0}],
+        }
+        result = matching_lower_timeframes("H4", parent, candidates)
+        self.assertEqual(result["aligned_timeframes"], ["H4"])
+        self.assertEqual(result["points"], 0)
+
+    def test_two_timeframes_get_one_point_three_get_two(self):
+        parent = {"direction": "SUPPLY", "low": 2400.0, "high": 2410.0}
+        one_match = {"H1": [{"direction": "SUPPLY", "low": 2405.0, "high": 2415.0}]}
+        two_matches = {
+            **one_match,
+            "M15": [{"direction": "SUPPLY", "low": 2402.0, "high": 2408.0}],
+        }
+        self.assertEqual(matching_lower_timeframes("H4", parent, one_match)["points"], 1)
+        self.assertEqual(matching_lower_timeframes("H4", parent, two_matches)["points"], 2)
 
     def test_contiguous_touches_are_one_visit(self):
         bars = [bar(20, 21), bar(9, 10), bar(9.5, 10.5), bar(20, 21),

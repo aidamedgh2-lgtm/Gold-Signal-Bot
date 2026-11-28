@@ -1,7 +1,9 @@
 import unittest
+import io
+from PIL import Image
 
 from services.chart_detector import (
-    map_normalized_bbox_to_market, validate_zone_result,
+    map_normalized_bbox_to_market, validate_zone_result, render_market_chart,
 )
 
 
@@ -19,6 +21,21 @@ CAL = {
 
 
 class ChartDetectorTests(unittest.TestCase):
+    def test_rendered_image_is_cropped_to_plot_and_calibration_matches(self):
+        image_bytes, calibration = render_market_chart(BARS, "H1")
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            self.assertEqual(image.size, (
+                calibration["image_width"], calibration["image_height"]
+            ))
+        self.assertEqual(calibration["axes_left"], 0.0)
+        self.assertEqual(calibration["axes_bottom"], 0.0)
+        self.assertEqual(calibration["axes_right"], calibration["image_width"])
+        self.assertEqual(calibration["axes_top"], calibration["image_height"])
+        mapped = map_normalized_bbox_to_market(
+            [0.05, 0.05, 0.95, 0.95], calibration, BARS
+        )
+        self.assertLess(mapped["low"], mapped["high"])
+
     def test_pixel_bbox_maps_to_calibrated_prices_and_times(self):
         mapped = map_normalized_bbox_to_market([0.2, 0.3, 0.4, 0.4], CAL, BARS)
         self.assertAlmostEqual(mapped["high"], 75.0)

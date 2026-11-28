@@ -45,7 +45,7 @@ def fetch(interval, delta, days, now):
 
 def main():
     if not KEY or not AI: raise SystemExit("Missing TWELVEDATA_API_KEY or OPENAI_API_KEY")
-    days=int(os.getenv("REPLAY_DAYS","30")); n=int(os.getenv("REPLAY_SNAPSHOTS","6"))
+    days=int(os.getenv("REPLAY_DAYS") or "30"); n=int(os.getenv("REPLAY_SNAPSHOTS") or "6")
     if not 7<=days<=90 or not 2<=n<=12: raise SystemExit("Invalid replay window/snapshot count")
     now=dt.datetime.now(dt.timezone.utc); histories={}
     for interval,label,delta in TFS:

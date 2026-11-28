@@ -61,3 +61,10 @@ swaps, and HFM feed differences. The available history may be too short for
 statistical conclusions, especially for higher-timeframe EMA warm-up. Treat
 this as an initial diagnostic, not proof of profitability or a basis for live
 trading. The scheduled bot continues its normal alert-only workflow.
+
+
+## PDF strategy visual replay (research only)
+
+The separate **PDF strategy visual historical replay** workflow reviews chronological chart snapshots on MN1, W1, D1, H4, H1 and M15. It requires the GitHub Actions secrets TWELVEDATA_API_KEY and GEMINI_API_KEY. The default run is 90 days with 6 checkpoints; the workflow fetches additional pre-window history for higher-timeframe context and uses closed candles only.
+
+The replay records visual zone candidates, a second AI review, hierarchical timeframe matches, visit counts, and D1/H4 zone-touch counts. It deliberately does **not** invent the PDF's missing planned entry, stop, or opposing target. Therefore it does not issue a final /10 score or a trade signal. A successful workflow means the visual replay completed, not that the strategy is profitable or fully validated. Inspect the uploaded JSON/CSV evidence and the unresolved criteria before drawing conclusions.

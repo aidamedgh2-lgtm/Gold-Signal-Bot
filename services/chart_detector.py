@@ -1,7 +1,6 @@
-"""Chart-first visual zone extraction with pixel-to-market calibration.
+"""Visual detection of the final candle before a sharp impulse.
 
-Vision returns normalized image coordinates only. Prices and timestamps are
-derived deterministically from Matplotlib's chart transform, never guessed by AI.
+Vision selects the candle index; exact zone prices come from that candle OHLC.
 """
 import io
 import math
@@ -36,7 +35,7 @@ def render_market_chart(bars, timeframe):
     ax.set_xticklabels([str(i) for i in ticks],
                        rotation=90, ha="center", fontsize=7)
     ax.set_ylabel("XAU/USD price")
-    ax.set_xlabel("Closed candle index and timestamp")
+    ax.set_xlabel("Closed candle index")
     ax.set_title(f"XAU/USD {timeframe} — closed candles")
     ax.grid(True, alpha=0.2)
     ax.set_xlim(-1, len(bars))
@@ -176,7 +175,7 @@ def detect_visual_zones(bars, timeframe, api_key, model="gemini-3.5-flash-lite")
         "impulse. Return origin_candle_index as the integer candle index shown "
         "on the chart x-axis. Demand means the final candle before a sharp upward "
         "impulse from a low; supply means the final candle before a sharp downward "
-        "impulse from a high. X-axis ticks are labelled 'index | timestamp'; count "
+        "impulse from a high. X-axis ticks are labelled with candle indices; count "
         "candle positions between labelled ticks to locate the exact candle. "
         "Return departure='sharp' only for the visually steep/near-vertical move "
         "described in the PDF. Do not return bbox, prices, timestamps, or zone "

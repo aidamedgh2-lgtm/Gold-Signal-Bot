@@ -16,7 +16,7 @@ from pathlib import Path
 
 from services.chart_detector import detect_visual_zones
 from services.vision_review import assess_candidate
-from strategy_fidelity import matching_lower_timeframes
+from strategy_fidelity import (\n    matching_lower_timeframes, count_zone_visits,\n    duration_points_by_timeframe, score_six_criteria,\n)
 
 API = "https://api.twelvedata.com/time_series"
 KEY = os.environ.get("TWELVEDATA_API_KEY", "").strip()
@@ -244,6 +244,42 @@ def main():
                         review["departure"] == zone["departure"]
                         and review["zone_readability"] == "clear"
                     )
+                    origin_index = next(
+                        (i for i, bar in enumerate(available)
+                         if bar["time"] == zone["origin_start"]),
+                        None,
+                    )
+                    if origin_index is None:
+                        raise RuntimeError("Origin candle is absent from closed history")
+                    visits = count_zone_visits(
+                        available, zone["low"], zone["high"], origin_index
+                    )
+                    origin_close = candle_close_time(
+                        available[origin_index], interval
+                    )
+                    d1_after = [
+                        bar for bar in histories["D1"]
+                        if origin_close <= candle_close_time(bar, "1day") <= point
+                    ]
+                    h4_after = [
+                        bar for bar in histories["H4"]
+                        if origin_close <= candle_close_time(bar, "4h") <= point
+                    ]
+                    duration = duration_points_by_timeframe(
+                        d1_after, h4_after, zone["low"], zone["high"]
+                    )
+                    # R:R stays unresolved: the PDF requires the prior opposing
+                    # destination and a planned entry/stop, neither may be guessed.
+                    partial_score = score_six_criteria(
+                        departure_visual=(
+                            review["departure"] if agreed else None
+                        ),
+                        approach_visual=review["approach"],
+                        rr_points=None,
+                        mtf_points=0,
+                        visits=visits,
+                        duration_points_value=duration["score"],
+                    )
                     records.append({
                         "checkpoint": checkpoint_index,
                         "time_utc": point.isoformat(),
@@ -263,6 +299,15 @@ def main():
                         "evidence": zone["evidence"],
                         "review_evidence": review["evidence"],
                         "unknown_reason": review["unknown_reason"],
+                        "zone_visits": visits,
+                        "visit_points": partial_score["criteria"]["visits"],
+                        "d1_duration_touch_count": duration["d1_count"],
+                        "h4_duration_touch_count": duration["h4_count"],
+                        "duration_points": duration["score"],
+                        "rr_points": None,
+                        "partial_criteria": partial_score["criteria"],
+                        "final_score_complete": partial_score["complete"],
+                        "final_score_total": partial_score["total"],
                     })
                     time.sleep(2)
             except Exception as exc:
@@ -288,6 +333,7 @@ def main():
         record["mtf_aligned_timeframes"] = aligned["aligned_timeframes"]
         record["mtf_matched_lower_timeframes"] = aligned["matched_lower_timeframes"]
         record["mtf_points"] = aligned["points"]
+        record["partial_criteria"]["mtf"] = aligned["points"]
         record["mtf_eligible"] = bool(
             aligned["eligible"] and record.get("status") == "TWO_AI_AGREE"
         )

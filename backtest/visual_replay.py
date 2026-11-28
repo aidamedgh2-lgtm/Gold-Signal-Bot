@@ -19,6 +19,21 @@ def parse_utc(value):
     stamp=dt.datetime.fromisoformat(value)
     return stamp.replace(tzinfo=dt.timezone.utc) if stamp.tzinfo is None else stamp.astimezone(dt.timezone.utc)
 
+def build_checkpoints(histories, n):
+    """Start only after every timeframe has its minimum 20-candle context."""
+    warmup = max(
+        parse_utc(histories[label][0]["time"]) + delta * 19
+        for _, label, delta in TFS
+    )
+    end = min(parse_utc(histories[label][-1]["time"]) for _, label, _ in TFS)
+    if end <= warmup:
+        raise RuntimeError(
+            "Not enough overlapping history after the 20-candle warm-up "
+            "across M15/H1/H4/D1"
+        )
+    return [warmup + (end - warmup) * i / (n - 1) for i in range(n)]
+
+
 def fetch(interval, delta, days, now):
     params=urllib.parse.urlencode({"symbol":SYMBOL,"interval":interval,"outputsize":5000,"timezone":"UTC","order":"desc","end_date":now.strftime("%Y-%m-%d %H:%M:%S"),"apikey":KEY,"format":"JSON"})
     req=urllib.request.Request(API+"?"+params,headers={"User-Agent":"Gold-SD-Visual-Replay/1.0"})
@@ -55,9 +70,7 @@ def main():
     now=dt.datetime.now(dt.timezone.utc); histories={}
     for interval,label,delta in TFS:
         histories[label]=fetch(interval,delta,days,now); print(f"{label}: {len(histories[label])} closed candles"); time.sleep(1)
-    end=min(parse_utc(v[-1]["time"]) for v in histories.values())
-    start=end-dt.timedelta(days=days)
-    checkpoints=[start+(end-start)*i/(n-1) for i in range(n)]
+    checkpoints=build_checkpoints(histories,n)
     records=[]
     for idx,point in enumerate(checkpoints,1):
         print(f"Checkpoint {idx}/{n}: {point.isoformat()}")
@@ -68,13 +81,14 @@ def main():
             window=available[-180:]
             try:
                 zones=detect_visual_zones(window,label,AI,MODEL)
+                time.sleep(2)
                 if not zones: records.append({"checkpoint":idx,"time_utc":point.isoformat(),"tf":label,"status":"NO_CLEAR_ZONE"})
                 for z in zones:
                     candidate={**z,"tf":label,"created":z["origin_start"]}
                     review=assess_candidate(window,candidate,AI,MODEL)
                     agree=review["departure"]==z["departure"] and review["zone_readability"]=="clear"
                     records.append({"checkpoint":idx,"time_utc":point.isoformat(),"tf":label,"status":"TWO_AI_AGREE" if agree else "REVIEW_DISAGREES","direction":z["direction"],"low":z["low"],"high":z["high"],"origin_start":z["origin_start"],"origin_end":z["origin_end"],"detector_departure":z["departure"],"review_departure":review["departure"],"approach":review["approach"],"readability":review["zone_readability"],"detector_confidence":z["confidence"],"review_confidence":review["confidence"],"evidence":z["evidence"],"review_evidence":review["evidence"]})
-                    time.sleep(1)
+                    time.sleep(2)
             except Exception as exc:
                 records.append({"checkpoint":idx,"time_utc":point.isoformat(),"tf":label,"status":"ERROR","error":str(exc)[:500]}); print(f"{label}: {exc}")
     OUT.mkdir(exist_ok=True)

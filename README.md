@@ -59,3 +59,17 @@ Set these repository Actions secrets:
 
 Do not paste or commit secret values. The scheduled GitHub Actions workflow is
 best-effort and is not a guaranteed always-on 24/5 service.
+
+
+## Supply & Demand anchor-zone boundary setting
+
+The zone's price thickness is calculated from the last candle immediately before
+the strong move on the higher timeframe. Configure `ZONE_BOUNDARY_MODE`:
+
+- `wick` (default): candle `Low` to `High`, including both wicks.
+- `body`: `min(Open, Close)` to `max(Open, Close)`, body only.
+
+The resulting higher-timeframe interval is the reference range for lower-timeframe
+zone matching. Lower timeframes must not create a substitute parent range or use
+an invented tolerance. Set this environment variable in the bot's runtime
+configuration; invalid values fail closed.

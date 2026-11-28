@@ -1,4 +1,6 @@
 import datetime as dt
+import io
+import urllib.error
 import importlib.util
 import json
 import unittest
@@ -83,6 +85,21 @@ class VisualReplayFetchTests(unittest.TestCase):
         with patch.object(visual_replay.urllib.request, "urlopen", return_value=FakeResponse({"values": self._values(now, invalid=True)})):
             with self.assertRaisesRegex(RuntimeError, "invalid OHLC ordering"):
                 fetch("15min", dt.timedelta(minutes=15), 2, now)
+
+    def test_retries_twelve_data_http_429(self):
+        now = dt.datetime(2026, 11, 28, 10, 40, tzinfo=dt.timezone.utc)
+        limited = urllib.error.HTTPError(
+            "https://api.twelvedata.com/time_series", 429, "Too Many Requests",
+            {"Retry-After": "0"}, io.BytesIO(b'{"message":"rate limited"}'),
+        )
+        with patch.object(
+            visual_replay.urllib.request, "urlopen",
+            side_effect=[limited, FakeResponse({"values": self._values(now)})],
+        ) as mocked, patch.object(visual_replay.time, "sleep") as sleeper:
+            bars = fetch("15min", dt.timedelta(minutes=15), 2, now)
+        self.assertGreaterEqual(len(bars), 20)
+        self.assertEqual(mocked.call_count, 2)
+        sleeper.assert_called_once_with(5.0)
 
 
 if __name__ == "__main__":

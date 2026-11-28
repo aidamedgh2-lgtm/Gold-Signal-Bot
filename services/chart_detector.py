@@ -5,6 +5,7 @@ derived deterministically from Matplotlib's chart transform, never guessed by AI
 """
 import io
 import math
+from PIL import Image
 from services.gemini_http import generate_json
 
 import matplotlib
@@ -55,7 +56,27 @@ def render_market_chart(bars, timeframe):
         fig.savefig(output, format="png", dpi=fig.dpi)
     finally:
         plt.close(fig)
-    return output.getvalue(), calibration
+
+    # Give vision only the actual plotting axes, not titles, tick labels or
+    # margins. Keep the exact fractional axes transform relative to this crop.
+    with Image.open(io.BytesIO(output.getvalue())) as source:
+        crop_left = max(0, int(math.floor(axes.x0)))
+        crop_right = min(width_px, int(math.ceil(axes.x1)))
+        crop_top = max(0, int(math.floor(height_px - axes.y1)))
+        crop_bottom = min(height_px, int(math.ceil(height_px - axes.y0)))
+        chart = source.crop((crop_left, crop_top, crop_right, crop_bottom))
+        cropped = io.BytesIO()
+        chart.save(cropped, format="PNG")
+
+    calibration.update({
+        "image_width": crop_right - crop_left,
+        "image_height": crop_bottom - crop_top,
+        "axes_left": float(axes.x0 - crop_left),
+        "axes_right": float(axes.x1 - crop_left),
+        "axes_bottom": float(axes.y0 - (height_px - crop_bottom)),
+        "axes_top": float(axes.y1 - (height_px - crop_bottom)),
+    })
+    return cropped.getvalue(), calibration
 
 
 def map_normalized_bbox_to_market(bbox, calibration, bars):
@@ -132,9 +153,10 @@ def detect_visual_zones(bars, timeframe, api_key, model="gemini-3.5-flash-lite")
         "Act only as a visual annotator for the user's original Supply & Demand "
         "method. Identify only clearly visible demand/supply origin zones with "
         "a departure. Return each zone as bbox=[x_min,y_min,x_max,y_max] normalized "
-        "to the FULL attached image (0..1), origin base rectangle only. Image "
-        "coordinates start at top-left. The plotting axes occupy only the central "
-        "chart area; do not include labels, tick text, or margins. Demand is a base "
+        "to the FULL attached image (0..1), origin base rectangle only. The "
+        "attached image has already been cropped to the plotting axes, so its full "
+        "width and height are the candle plot. Image coordinates start at top-left. "
+        "Demand is a base "
         "at a low followed by upward departure; supply is a base at a high followed "
         "by downward departure. Classify departure visually as sideways, diagonal, "
         "sharp, or uncertain. If boundaries are unclear, set boundary_status=unclear. "

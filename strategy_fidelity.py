@@ -73,8 +73,17 @@ def matching_lower_timeframes(parent_tf: str, parent_zone: Mapping,
         raise ValueError(f"unknown parent timeframe: {parent_tf}")
     low, high = _finite_number(parent_zone["low"], "zone low"), _finite_number(parent_zone["high"], "zone high")
     direction = parent_zone.get("direction")
+    parent_departure = parent_zone.get("departure", parent_zone.get("detector_departure", "sharp"))
     if direction not in ("DEMAND", "SUPPLY") or low >= high:
         raise ValueError("invalid parent zone")
+    if parent_departure not in ("sharp", "diagonal", "sideways", "uncertain"):
+        raise ValueError("invalid parent departure classification")
+    # A sideways/uncertain parent impulse is a hard rejection, never a scored zone.
+    if parent_departure in ("sideways", "uncertain"):
+        return {
+            "eligible": False, "rejection_reason": "parent_departure_not_directional",
+            "aligned_timeframes": [], "matched_lower_timeframes": [], "points": 0,
+        }
     parent_order = TIMEFRAME_ORDER[parent_tf]
     aligned = [parent_tf]
     matched = []
@@ -82,16 +91,26 @@ def matching_lower_timeframes(parent_tf: str, parent_zone: Mapping,
         for candidate in candidates_by_tf.get(tf, ()):
             if candidate.get("direction") != direction:
                 continue
+            # Lower frames must reveal a genuinely sharp impulse in the same
+            # price area. A diagonal/sideways lower-frame move cannot confirm.
+            departure = candidate.get("departure", candidate.get("detector_departure"))
+            if departure != "sharp":
+                continue
+            if candidate.get("status") not in (None, "TWO_AI_AGREE"):
+                continue
             c_low = _finite_number(candidate["low"], "candidate low")
             c_high = _finite_number(candidate["high"], "candidate high")
             if c_low < c_high and max(low, c_low) <= min(high, c_high):
                 aligned.append(tf)
                 matched.append(tf)
                 break
+    eligible = bool(matched)
     return {
-        "aligned_timeframes": aligned,
+        "eligible": eligible,
+        "rejection_reason": "" if eligible else "no_sharp_lower_timeframe_confirmation",
+        "aligned_timeframes": aligned if eligible else [parent_tf],
         "matched_lower_timeframes": matched,
-        "points": hierarchical_mtf_points(aligned),
+        "points": hierarchical_mtf_points(aligned) if eligible else 0,
     }
 
 
